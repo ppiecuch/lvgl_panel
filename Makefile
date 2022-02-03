@@ -1,16 +1,23 @@
 #
 # Makefile
 #
+
 BIN = panel
 DESTDIR = /usr
 PREFIX = /local
 
 LVGL_DIR = lvgl
 
-CC=gcc
-CXX=g++
-CFLAGS = -Wall -Wshadow -Wundef -Wmaybe-uninitialized
+CC = gcc
+CXX = g++
+CFLAGS = -Wall -Wshadow -Wundef
 CFLAGS += -O3 -g3 -I./ -I$(LVGL_DIR)
+
+ifeq ($(shell $(CC) -v 2>&1 | grep -c "clang version"), 1)
+	CFLAGS += -Wuninitialized
+else
+	CFLAGS += -Wmaybe-uninitialized
+endif
 
 # directory for local libs
 LDFLAGS = -L$(DESTDIR)$(PREFIX)/lib
@@ -38,9 +45,9 @@ OBJS = $(COBJS)
 all: default
 
 $(OBJDIR)/%.o: %.c
-	@mkdir -p $(shell dirname $@)
-	@$(CC)  $(CFLAGS) -c $< -o $@
+	@mkdir -p $(dir $@)
 	@echo "CC $< -> $@"
+	@$(CC)  $(CFLAGS) -c $< -o $@
 
 default: $(OBJS)
 	$(CC) -o $(BIN) $(OBJS) $(LDFLAGS) $(LIBS)
