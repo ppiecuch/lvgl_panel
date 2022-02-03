@@ -1,14 +1,16 @@
 #
 # Makefile
 #
-BIN = demo
+BIN = panel
 DESTDIR = /usr
 PREFIX = /local
+
+LVGL_DIR = lvgl
 
 CC=gcc
 CXX=g++
 CFLAGS = -Wall -Wshadow -Wundef -Wmaybe-uninitialized
-CFLAGS += -O3 -g3 -I./
+CFLAGS += -O3 -g3 -I./ -I$(LVGL_DIR)
 
 # directory for local libs
 LDFLAGS = -L$(DESTDIR)$(PREFIX)/lib
@@ -18,16 +20,13 @@ VPATH =
 
 $(info LDFLAGS ="$(LDFLAGS)")
 
-LVGL_DIR = lvgl
-
 include $(LVGL_DIR)/lvgl.mk
 include $(LVGL_DIR)/lv_drivers/lv_drivers.mk
-include $(LVGL_DIR)/lv_examples/lv_examples.mk
 
 # folder for object files
 OBJDIR = ./obj
 
-CSRCS += $(wildcard *.c)
+CSRCS += $(wildcard *.c) $(wildcard assets/*.c)
 
 COBJS = $(patsubst %.c,$(OBJDIR)/%.o,$(CSRCS))
 
@@ -39,14 +38,14 @@ OBJS = $(COBJS)
 all: default
 
 $(OBJDIR)/%.o: %.c
-	@mkdir -p $(OBJDIR)
+	@mkdir -p $(shell dirname $@)
 	@$(CC)  $(CFLAGS) -c $< -o $@
-	@echo "CC $<"
+	@echo "CC $< -> $@"
 
 default: $(OBJS)
 	$(CC) -o $(BIN) $(OBJS) $(LDFLAGS) $(LIBS)
 
-#	nothing to do but will print info
+# nothing to do but will print info
 nothing:
 	$(info OBJS ="$(OBJS)")
 	$(info SRCS ="$(SRCS)")
