@@ -9,8 +9,14 @@ LVGL_DIR = lvgl
 
 CC=gcc
 CXX=g++
-CFLAGS = -Wall -Wshadow -Wundef -Wmaybe-uninitialized
+CFLAGS = -Wall -Wshadow -Wundef
 CFLAGS += -O3 -g3 -I./ -I$(LVGL_DIR)
+
+ifeq ($(shell $(CC) -v 2>&1 | grep -c "clang version"), 1)
+  CFLAGS += -Wuninitialized
+else
+  CFLAGS += -Wmaybe-uninitialized
+endif
 
 # directory for local libs
 LDFLAGS = -L$(DESTDIR)$(PREFIX)/lib
