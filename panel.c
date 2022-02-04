@@ -5,6 +5,8 @@
 #include <unistd.h>
 #include <stdio.h>
 
+LV_FONT_DECLARE(digital_clock)
+
 // display buffer size - not sure if this size is really needed
 #define LV_BUF_SIZE 384000		// 800x480
 
@@ -23,9 +25,19 @@ const char* MONTH[] = {"January", "February", "March", "April", "May", "June", "
 char timeString[9];
 char dateString[16];
 
+static lv_style_t style_large;
+static lv_style_t style_clock;
+static lv_style_t style_title;
+
 static lv_obj_t *clock_label;
 static lv_obj_t *date_label;
 
+static const lv_font_t *font_title;
+static const lv_font_t *font_large;
+static const lv_font_t *font_normal;
+
+static lv_obj_t *controls_panel;
+static lv_obj_t *gallery_panel;
 
 // Utilities functions
 
@@ -66,7 +78,42 @@ static int get_current_network_speed() {
 }
 
 
-//  Main loop
+//  Main entry
+
+static void panel_init(void) {
+
+    font_title =  &lv_font_montserrat_48;
+    font_large =  &lv_font_montserrat_24;
+    font_normal =  &lv_font_montserrat_16;
+
+#if LV_USE_THEME_DEFAULT
+    lv_theme_default_init(NULL, lv_palette_main(LV_PALETTE_BLUE), lv_palette_main(LV_PALETTE_RED), LV_THEME_DEFAULT_DARK, font_normal);
+#endif
+
+    lv_style_init(&style_title);
+    lv_style_set_text_font(&style_title, font_large);
+
+    lv_style_init(&style_large);
+    lv_style_set_text_font(&style_large, font_title);
+
+    lv_style_init(&style_clock);
+    lv_style_set_text_font(&style_clock, &digital_clock);
+
+    controls_panel = lv_cont_create(lv_scr_act(), NULL);
+    lv_obj_set_auto_realign(controls_panel, true);                    /*Auto realign when the size changes*/
+    lv_obj_align_origo(controls_panel, NULL, LV_ALIGN_CENTER, 0, 0);
+    lv_cont_set_fit(controls_panel, LV_FIT_TIGHT);
+    lv_cont_set_layout(controls_panel, LV_LAYOUT_COLUMN_MID);
+
+    clock_label = lv_label_create(controls_panel);
+    lv_obj_add_style(clock_label, &style_clock, 0);
+    lv_label_set_text(clock_label, timeString);
+    lv_label_set_long_mode(clock_label, LV_LABEL_LONG_WRAP);
+
+    date_label = lv_label_create(controls_panel);
+    lv_label_set_text(date_label, dateString);
+    lv_obj_add_style(date_label, &style_large, 0);
+}
 
 int main(void)
 {
@@ -101,6 +148,9 @@ int main(void)
 	lv_obj_t * label = lv_label_create(lv_scr_act(), NULL);
 	lv_label_set_text(label, "Hello world!");
 	lv_obj_align(label, NULL, LV_ALIGN_CENTER, 0, 0);
+
+    // Panel initialization
+    panel_init();
 
 	// Handle LitlevGL tasks (tickless mode)
 	while(1) {
