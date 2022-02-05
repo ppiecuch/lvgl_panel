@@ -4,11 +4,12 @@
 #include <time.h>
 #include <unistd.h>
 #include <stdio.h>
+#include <stdbool.h>
 
 LV_FONT_DECLARE(digital_clock)
 
 // display buffer size - not sure if this size is really needed
-#define LV_BUF_SIZE 384000		// 800x480
+#define LV_BUF_SIZE 384000 // 800x480
 
 // A static variable to store the display buffers
 static lv_disp_buf_t disp_buf;
@@ -18,21 +19,18 @@ static lv_color_t lvbuf1[LV_BUF_SIZE];
 static lv_color_t lvbuf2[LV_BUF_SIZE];
 
 // Display info and controls
-unsigned long int kb_sent, kb_sent_prev = 0;
-const char* DAY[] = {"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"};
-const char* MONTH[] = {"January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"};
+static const char* DAY[] = {"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"};
+static const char* MONTH[] = {"January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"};
 
 char timeString[9];
 char dateString[16];
 
 static lv_style_t style_large;
 static lv_style_t style_clock;
-static lv_style_t style_title;
 
 static lv_obj_t *clock_label;
 static lv_obj_t *date_label;
 
-static const lv_font_t *font_title;
 static const lv_font_t *font_large;
 static const lv_font_t *font_normal;
 
@@ -54,6 +52,9 @@ static void time_timer_cb(lv_task_t *timer) {
 }
 
 static int get_current_network_speed() {
+
+    static unsigned long int kb_sent = 0, kb_sent_prev = 0;
+
     FILE *fp = fopen("/proc/net/dev", "r");
     char buf[200], ifname[20];
     unsigned long int r_bytes, t_bytes, r_packets, t_packets;
@@ -64,9 +65,11 @@ static int get_current_network_speed() {
     }
 
     while (fgets(buf, 200, fp)) {
-        sscanf(buf, "%[^:]: %lu %lu %*lu %*lu %*lu %*lu %*lu %*lu %lu %lu", ifname, &r_bytes, &r_packets, &t_bytes, &t_packets);
-        if(strstr(ifname, "eth0") != NULL) {
-	  kb_sent = r_bytes / 1024;
+        sscanf(buf, "%[^:]: %lu %lu %*lu %*lu %*lu %*lu %*lu %*lu %lu %lu",
+            ifname, &r_bytes, &r_packets, &t_bytes, &t_packets
+        );
+        if (strstr(ifname, "eth0") != NULL) {
+            kb_sent = r_bytes / 1024;
         }
     }
 
@@ -82,22 +85,22 @@ static int get_current_network_speed() {
 
 static void panel_init(void) {
 
-    font_title =  &lv_font_montserrat_48;
     font_large =  &lv_font_montserrat_24;
     font_normal =  &lv_font_montserrat_16;
 
-#if LV_USE_THEME_DEFAULT
-    lv_theme_default_init(NULL, lv_palette_main(LV_PALETTE_BLUE), lv_palette_main(LV_PALETTE_RED), LV_THEME_DEFAULT_DARK, font_normal);
+#if LV_USE_THEME_MATERIAL
+    if(LV_THEME_DEFAULT_INIT == lv_theme_material_init) {
+        LV_THEME_DEFAULT_INIT(lv_theme_get_color_primary(), lv_theme_get_color_primary(),
+            LV_THEME_MATERIAL_FLAG_LIGHT,
+            lv_theme_get_font_small(), lv_theme_get_font_normal(), lv_theme_get_font_subtitle(), lv_theme_get_font_title());
+    }
 #endif
 
-    lv_style_init(&style_title);
-    lv_style_set_text_font(&style_title, font_large);
-
     lv_style_init(&style_large);
-    lv_style_set_text_font(&style_large, font_title);
+    lv_style_set_text_font(&style_large, LV_STATE_DEFAULT, font_large);
 
     lv_style_init(&style_clock);
-    lv_style_set_text_font(&style_clock, &digital_clock);
+    lv_style_set_text_font(&style_clock, LV_STATE_DEFAULT, &digital_clock);
 
     controls_panel = lv_cont_create(lv_scr_act(), NULL);
     lv_obj_set_auto_realign(controls_panel, true);                    /*Auto realign when the size changes*/
@@ -105,27 +108,22 @@ static void panel_init(void) {
     lv_cont_set_fit(controls_panel, LV_FIT_TIGHT);
     lv_cont_set_layout(controls_panel, LV_LAYOUT_COLUMN_MID);
 
-    clock_label = lv_label_create(controls_panel);
-    lv_obj_add_style(clock_label, &style_clock, 0);
+    clock_label = lv_label_create(controls_panel, NULL);
+    lv_obj_add_style(clock_label, LV_LABEL_PART_MAIN, &style_clock);
     lv_label_set_text(clock_label, timeString);
-    lv_label_set_long_mode(clock_label, LV_LABEL_LONG_WRAP);
+    lv_label_set_long_mode(clock_label, LV_LABEL_LONG_EXPAND);
 
-    date_label = lv_label_create(controls_panel);
+    date_label = lv_label_create(controls_panel, NULL);
     lv_label_set_text(date_label, dateString);
-    lv_obj_add_style(date_label, &style_large, 0);
+    lv_obj_add_style(date_label, LV_LABEL_PART_MAIN, &style_large);
+    lv_label_set_long_mode(date_label, LV_LABEL_LONG_SROLL_CIRC);
 }
 
-int main(void)
-{
+int main(void) {
 
-	// LittlevGL init
-	lv_init();
-
-	//Linux frame buffer device init
-	fbdev_init();
-
-	// Touch pointer device init
-	evdev_init();
+	lv_init(); // LittlevGL init
+	fbdev_init(); //Linux frame buffer device init
+	evdev_init(); // Touch pointer device init
 
 	// Initialize `disp_buf` with the display buffer(s)
 	lv_disp_buf_init(&disp_buf, lvbuf1, lvbuf2, LV_BUF_SIZE);
