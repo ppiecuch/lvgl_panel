@@ -8,9 +8,6 @@
 #ifndef LV_DRV_CONF_H
 #define LV_DRV_CONF_H
 
-//#define USE_EVDEV 1
-//#define USE_FBDEV 1
-
 #include "lv_conf.h"
 
 /*********************
@@ -81,9 +78,13 @@
 /*-------------------
  *  Monitor of PC
  *-------------------*/
-#ifndef USE_MONITOR
+#ifdef __linux__
+# ifndef USE_MONITOR
 #  define USE_MONITOR         0
-#endif
+# endif
+#else /* __linux__ */
+# define USE_MONITOR          1
+#endif /* __linux__ */
 
 #if USE_MONITOR
 #  define MONITOR_HOR_RES     LV_HOR_RES
@@ -249,20 +250,28 @@
 /*-----------------------------------------
  *  Linux frame buffer device (/dev/fbx)
  *-----------------------------------------*/
-#ifndef USE_FBDEV
+#ifdef __linux__
+# ifndef USE_FBDEV
 #  define USE_FBDEV           1
-#endif
+# endif
+#else /* __linux__ */
+# define USE_FBDEV            0
+#endif /* __linux__ */
 
-#if USE_FBDEV
+# if USE_FBDEV
 #  define FBDEV_PATH          "/dev/fb0"
-#endif
+# endif
 
 /*-----------------------------------------
  *  FreeBSD frame buffer device (/dev/fbx)
  *.........................................*/
-#ifndef USE_BSD_FBDEV
+#ifdef __linux__
+# ifndef USE_BSD_FBDEV
 #  define USE_BSD_FBDEV		0
-#endif
+# endif
+#else /* __linux__ */
+# define USE_BSD_FBDEV		0
+#endif /* __linux__ */
 
 #if USE_BSD_FBDEV
 # define FBDEV_PATH		"/dev/fb0"
@@ -330,9 +339,13 @@
 /*---------------------------------------
  * Mouse or touchpad on PC (using SDL)
  *-------------------------------------*/
-#ifndef USE_MOUSE
-#  define USE_MOUSE           0
-#endif
+#ifdef __APPLE__
+# define USE_MOUSE           1
+#else /* __APPLE__ */
+# ifndef USE_MOUSE
+#  define USE_MOUSE          0
+# endif
+#endif /* __APPLE__ */
 
 #if USE_MOUSE
 /*No settings*/
@@ -341,9 +354,13 @@
 /*-------------------------------------------
  * Mousewheel as encoder on PC (using SDL)
  *------------------------------------------*/
+#ifdef __APPLE__
+# define USE_MOUSEWHEEL       1
+#else /* __APPLE__ */
 #ifndef USE_MOUSEWHEEL
 #  define USE_MOUSEWHEEL      0
 #endif
+#endif /* __APPLE__ */
 
 #if USE_MOUSEWHEEL
 /*No settings*/
@@ -363,13 +380,18 @@
 /*-------------------------------------------------
  * Mouse or touchpad as evdev interface (for Linux based systems)
  *------------------------------------------------*/
-#ifndef USE_EVDEV
+#ifdef __linux__
+# ifndef USE_EVDEV
 #  define USE_EVDEV           1
-#endif
+# endif
 
-#ifndef USE_BSD_EVDEV
+# ifndef USE_BSD_EVDEV
 #  define USE_BSD_EVDEV       0
-#endif
+# endif
+#else // __linux__
+# define USE_EVDEV            0
+# define USE_BSD_EVDEV        0
+#endif // __linux__
 
 #if USE_EVDEV
 #  define EVDEV_NAME   "/dev/input/event0"        /*You can use the "evtest" Linux tool to get the list of devices and test them*/
@@ -388,9 +410,13 @@
 /*-------------------------------
  *   Keyboard of a PC (using SDL)
  *------------------------------*/
-#ifndef USE_KEYBOARD
+#ifdef __APPLE__
+# define USE_KEYBOARD         1
+#else /* __APPLE__ */
+# ifndef USE_KEYBOARD
 #  define USE_KEYBOARD        0
-#endif
+# endif
+#endif /* __APPLE__ */
 
 #if USE_KEYBOARD
 /*No settings*/

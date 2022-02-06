@@ -13,15 +13,24 @@ CXX = g++
 CFLAGS = -Wall -Wshadow -Wundef
 CFLAGS += -O3 -g3 -I./ -I$(LVGL_DIR)
 
+# directory for local libs
+LDFLAGS = -L$(DESTDIR)$(PREFIX)/lib
+LIBS += -lstdc++ -lm
+
 ifeq ($(shell $(CC) -v 2>&1 | grep -c "clang version"), 1)
 	CFLAGS += -Wuninitialized
 else
 	CFLAGS += -Wmaybe-uninitialized
 endif
 
-# directory for local libs
-LDFLAGS = -L$(DESTDIR)$(PREFIX)/lib
-LIBS += -lstdc++ -lm
+ifeq ($(OS),Windows_NT)
+else
+	UNAME_S := $(shell uname -s)
+	ifeq ($(UNAME_S),Darwin)
+		CFLAGS += -I/opt/local/include
+		LIBS += -L/opt/local/lib -lSDL2
+	endif
+endif
 
 VPATH =
 
