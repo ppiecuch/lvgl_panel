@@ -11,11 +11,11 @@ LVGL_DIR = lvgl
 CC = gcc
 CXX = g++
 CFLAGS = -Wall -Wshadow -Wundef
-CFLAGS += -O3 -g3 -I./ -I$(LVGL_DIR)
+CFLAGS += -g3 -I./ -I./deps -I$(LVGL_DIR)
 
 # directory for local libs
 LDFLAGS = -L$(DESTDIR)$(PREFIX)/lib
-LIBS += -lstdc++ -lm
+LIBS += -lstdc++ -lm -lcurl
 
 ifeq ($(shell $(CC) -v 2>&1 | grep -c "clang version"), 1)
 	CFLAGS += -Wuninitialized
@@ -43,7 +43,7 @@ include $(LVGL_DIR)/lv_lib_png/lv_lib_png.mk
 # folder for object files
 OBJDIR = ./obj
 
-CSRCS += $(wildcard *.c) $(wildcard assets/*.c)
+CSRCS += $(wildcard *.c) $(wildcard assets/*.c) $(wildcard deps/*.c)
 
 COBJS = $(patsubst %.c,$(OBJDIR)/%.o,$(CSRCS))
 
