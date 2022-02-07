@@ -38,6 +38,7 @@ $(info LDFLAGS ="$(LDFLAGS)")
 
 include $(LVGL_DIR)/lvgl.mk
 include $(LVGL_DIR)/lv_drivers/lv_drivers.mk
+include $(LVGL_DIR)/lv_lib_png/lv_lib_png.mk
 
 # folder for object files
 OBJDIR = ./obj
