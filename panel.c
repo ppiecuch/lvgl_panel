@@ -81,9 +81,9 @@ static void time_timer_cb(lv_task_t *timer) {
 
     snprintf(timeString, 16, "%02d:%02d:%02d", local->tm_hour, local->tm_min, local->tm_sec);
     if (strlen(weatherString) > 0)
-        snprintf(dateString, 64, "%s | %s %02d %04d | %s", DAY[local->tm_wday], MONTH[local->tm_mon], local->tm_mday, local->tm_year + 1900, weatherString);
+        snprintf(dateString, 128, "%s | %s %02d %04d | %s", DAY[local->tm_wday], MONTH[local->tm_mon], local->tm_mday, local->tm_year + 1900, weatherString);
     else
-        snprintf(dateString, 64, "%s | %s %02d %04d", DAY[local->tm_wday], MONTH[local->tm_mon], local->tm_mday, local->tm_year + 1900);
+        snprintf(dateString, 128, "%s | %s %02d %04d", DAY[local->tm_wday], MONTH[local->tm_mon], local->tm_mday, local->tm_year + 1900);
     for (int c=0; c<8; c++) {
         const char str[2] = { timeString[c], 0 };
         lv_label_set_text(clock_label[c], str);
