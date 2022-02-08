@@ -190,6 +190,8 @@ static void gallery_fill(lv_obj_t *gallery_panel) {
 static void gallery_timer_cb(lv_task_t *timer) {
     static lv_obj_t *gallery_panel = NULL;
 
+    srand(time(NULL));
+
     if (gallery_panel == gallery_panel1)
         gallery_panel = gallery_panel2;
     else
@@ -273,9 +275,11 @@ static void *fetch_weather_api(void *thread_data) {
                     cJSON *current = cJSON_GetObjectItemCaseSensitive(json, "current");
                     if (current) {
                         cJSON *temp = cJSON_GetObjectItemCaseSensitive(current, "temp");
-                        if (cJSON_IsNumber(temp)) {
-                            strcat(weatherString, _ssprintf("Temp. %d C", temp->valueint));
-                        }
+                        if (cJSON_IsNumber(temp))
+                            strcat(weatherString, _ssprintf("Temp. %d\x7f" "C", temp->valueint));
+                        cJSON *feels = cJSON_GetObjectItemCaseSensitive(current, "feels_like");
+                        if (cJSON_IsNumber(feels))
+                            strcat(weatherString, _ssprintf(" / Feels %d\x7f" "C", feels->valueint));
                     } else
                         printf("%s[ERROR]%s Unknown JSON data: %s\n", RED, NORMAL_COLOR, chunk->buf);
                 }
