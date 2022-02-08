@@ -61,7 +61,7 @@ static lv_obj_t *date_label;
 static lv_obj_t *led1;
 static lv_obj_t *controls_panel, *gallery_panel1, *gallery_panel2;
 
-static char weatherString[1024] = { 0 };
+static char weatherString[64] = { 0 };
 
 // Utilities functions
 
@@ -74,7 +74,7 @@ static char weatherString[1024] = { 0 };
 static void time_timer_cb(lv_task_t *timer) {
 
     char timeString[16] = { 0 };
-    char dateString[64] = { 0 };
+    char dateString[128] = { 0 };
 
     time_t t = time(NULL);
     struct tm *local = localtime(&t);
