@@ -172,15 +172,14 @@ static void gallery_fill(lv_obj_t *gallery_panel) {
         srand(time(NULL));
         lv_obj_t *img = lv_obj_get_child(gallery_panel, NULL);
         while (img) {
-            if (rand()%10 > 5) {
-                if (!_cache[_index])
-                    _index = 0;
-                if (_cache[_index]) {
+            if ((rand()%10) > 7) {
+                if (_cache[_index])
                     lv_img_set_src(img, _ssprintf("gallery/%s", _cache[_index]));
-                    _index++;
-                }
                 img = lv_obj_get_child(gallery_panel, img);
             }
+            _index++;
+            if (!_cache[_index])
+                _index = 0; // restart
         }
     }
 
@@ -280,11 +279,14 @@ static void *fetch_weather_api(void *thread_data) {
                     cJSON *current = cJSON_GetObjectItemCaseSensitive(json, "current");
                     if (current) {
                         cJSON *temp = cJSON_GetObjectItemCaseSensitive(current, "temp");
-                        if (cJSON_IsNumber(temp))
+                        if (temp && cJSON_IsNumber(temp))
                             strcat(weatherString, _ssprintf("Temp. %d\x7f" "C", temp->valueint));
                         cJSON *feels = cJSON_GetObjectItemCaseSensitive(current, "feels_like");
-                        if (cJSON_IsNumber(feels))
+                        if (feels && cJSON_IsNumber(feels))
                             strcat(weatherString, _ssprintf(" / Feels %d\x7f" "C", feels->valueint));
+                        cJSON *clouds = cJSON_GetObjectItemCaseSensitive(current, "clouds");
+                        if (clouds && cJSON_IsNumber(clouds))
+                            strcat(weatherString, _ssprintf(" / Clouds %d%%", clouds->valueint));
                     } else
                         printf("%s[ERROR]%s Unknown JSON data: %s\n", RED, NORMAL_COLOR, chunk->buf);
                 }
@@ -407,7 +409,7 @@ static void panel_init(char *prog_name) {
         GREEN, NORMAL_COLOR,
         lv_obj_get_width(gallery_panel1), lv_obj_get_height(gallery_panel1));
 
-    for (int i=0; i<10; i++) {
+    for (int i=0; i<8; i++) {
         // image placeholders
         lv_img_create(gallery_panel1, NULL);
         lv_img_create(gallery_panel2, NULL);
@@ -420,7 +422,7 @@ static void panel_init(char *prog_name) {
 
     time_task = lv_task_create(time_timer_cb, 1000, LV_TASK_PRIO_MID, NULL);
     net_task = lv_task_create(net_timer_cb, 3000, LV_TASK_PRIO_LOW, NULL);
-    gallery_task = lv_task_create(gallery_timer_cb, 10000, LV_TASK_PRIO_LOW, NULL);
+    gallery_task = lv_task_create(gallery_timer_cb, 15000, LV_TASK_PRIO_LOW, NULL);
     weather_task = lv_task_create(weather_timer_cb, 5*60000, LV_TASK_PRIO_LOW, NULL);
 }
 
