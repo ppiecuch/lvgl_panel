@@ -20,7 +20,7 @@ LIBS += -lstdc++ -lm -lcurl
 ifeq ($(shell $(CC) -v 2>&1 | grep -c "clang version"), 1)
 	CFLAGS += -Wuninitialized
 else
-	CFLAGS += -Wmaybe-uninitialized
+	CFLAGS += -Wmaybe-uninitialized -Wno-format
 endif
 
 ifeq ($(OS),Windows_NT)
