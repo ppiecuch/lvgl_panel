@@ -11,7 +11,7 @@ LVGL_DIR = lvgl
 CC = gcc
 CXX = g++
 CFLAGS = -Wall -Wshadow -Wundef
-CFLAGS += -g3 -I./ -I./deps -I$(LVGL_DIR)
+CFLAGS += -O3 -g3 -I./ -I./deps -I$(LVGL_DIR)
 
 # directory for local libs
 LDFLAGS = -L$(DESTDIR)$(PREFIX)/lib
