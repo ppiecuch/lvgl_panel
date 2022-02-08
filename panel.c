@@ -169,9 +169,10 @@ static void gallery_fill(lv_obj_t *gallery_panel) {
     }
 
     if (_cache) {
+        srand(time(NULL));
         lv_obj_t *img = lv_obj_get_child(gallery_panel, NULL);
         while (img) {
-            if (rand()%10 > 6) {
+            if (rand()%10 > 5) {
                 if (!_cache[_index])
                     _index = 0;
                 if (_cache[_index]) {
@@ -190,8 +191,6 @@ static void gallery_fill(lv_obj_t *gallery_panel) {
 
 static void gallery_timer_cb(lv_task_t *timer) {
     static lv_obj_t *gallery_panel = NULL;
-
-    srand(time(NULL));
 
     if (gallery_panel == gallery_panel1)
         gallery_panel = gallery_panel2;
