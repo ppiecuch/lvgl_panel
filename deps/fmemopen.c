@@ -17,6 +17,9 @@
 #include "config.h"
 
 #include <stdio.h>
+#ifdef HAVE_LIBBSD
+#include <bsd/stdio.h>
+#endif
 
 #ifdef HAVE_FUNOPEN
 #include <stdlib.h>
@@ -63,9 +66,9 @@ static int writefn(void *arg, const char *buf, int len)
 	return len;
 }
 
-static fpos_t seekfn(void *arg, fpos_t offset, int whence)
+static off_t seekfn(void *arg, off_t offset, int whence)
 {
-	fpos_t pos;
+	off_t pos;
 	ops_t *ops = (ops_t *)arg;
 
 	switch (whence) {

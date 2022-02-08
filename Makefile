@@ -28,7 +28,9 @@ else
 	UNAME_S := $(shell uname -s)
 	ifeq ($(UNAME_S),Darwin)
 		CFLAGS += -I/opt/local/include
-		LIBS += -L/opt/local/lib -lSDL2
+		LIBS += -L/opt/local/lib -lSDL2 -lpthread
+	else
+		LIBS += -lbsd -lpthread
 	endif
 endif
 

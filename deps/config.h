@@ -13,10 +13,17 @@
 #define HAVE_DLFCN_H 1
 
 /* Define to 1 if you have the `fmemopen' function. */
+#ifdef __APPLE__
 #define HAVE_FMEMOPEN 1
+#endif
 
 /* Define to 1 if you have the `funopen' function. */
 #define HAVE_FUNOPEN 1
+
+/* Define to 1 if you have libbsd available */
+#ifdef __linux__
+#define HAVE_LIBBSD 1
+#endif
 
 /* Define if the GNU gettext() function is already present or preinstalled. */
 /* #undef HAVE_GETTEXT */
