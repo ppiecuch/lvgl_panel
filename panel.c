@@ -56,7 +56,7 @@ static const lv_task_t *time_task, *net_task, *gallery_task, *weather_task;
 static const lv_font_t *font_large, *font_normal;
 
 static lv_obj_t *clock_label[8];
-static lv_obj_t *date_label;
+static lv_obj_t *date_label, *weather_label;
 
 static lv_obj_t *led1;
 static lv_obj_t *controls_panel, *gallery_panel1, *gallery_panel2;
@@ -80,15 +80,21 @@ static void time_timer_cb(lv_task_t *timer) {
     struct tm *local = localtime(&t);
 
     snprintf(timeString, 16, "%02d:%02d:%02d", local->tm_hour, local->tm_min, local->tm_sec);
-    if (strlen(weatherString) > 0)
-        snprintf(dateString, 128, "%s | %s %02d %04d | %s", DAY[local->tm_wday], MONTH[local->tm_mon], local->tm_mday, local->tm_year + 1900, weatherString);
-    else
-        snprintf(dateString, 128, "%s | %s %02d %04d", DAY[local->tm_wday], MONTH[local->tm_mon], local->tm_mday, local->tm_year + 1900);
     for (int c=0; c<8; c++) {
         const char str[2] = { timeString[c], 0 };
         lv_label_set_text(clock_label[c], str);
     }
+
+    if (strlen(weatherString) > 0)
+        snprintf(dateString, 128, "%s | %s %02d %04d | ", DAY[local->tm_wday], MONTH[local->tm_mon], local->tm_mday, local->tm_year + 1900);
+    else
+        snprintf(dateString, 128, "%s | %s %02d %04d", DAY[local->tm_wday], MONTH[local->tm_mon], local->tm_mday, local->tm_year + 1900);
     lv_label_set_text(date_label, dateString);
+
+    lv_obj_set_x(weather_label, lv_obj_get_width(date_label));
+    lv_obj_set_width(weather_label, lv_obj_get_width(controls_panel) - lv_obj_get_width(date_label));
+    lv_label_set_text(weather_label, weatherString);
+
 }
 
 static int get_current_network_speed_cb() {
@@ -367,11 +373,17 @@ static void panel_init(char *prog_name) {
     }
 
     date_label = lv_label_create(controls_panel, NULL);
-    lv_obj_set_pos(date_label, 0, gl_h + 2);
+    lv_obj_set_y(date_label, gl_h + 2);
     lv_obj_set_size(date_label, lv_obj_get_width(controls_panel), 25);
     lv_label_set_text(date_label, "");
     lv_obj_add_style(date_label, LV_LABEL_PART_MAIN, &style_large);
     lv_label_set_long_mode(date_label, LV_LABEL_LONG_EXPAND);
+
+    weather_label = lv_label_create(controls_panel, NULL);
+    lv_obj_set_y(weather_label, gl_h + 2);
+    lv_label_set_text(weather_label, "");
+    lv_obj_add_style(weather_label, LV_LABEL_PART_MAIN, &style_large);
+    lv_label_set_long_mode(weather_label, LV_LABEL_LONG_SROLL);
 
     led1 = lv_led_create(controls_panel, NULL);
     lv_obj_set_pos(led1, 785, 1);
