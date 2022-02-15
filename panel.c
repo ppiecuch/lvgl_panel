@@ -137,7 +137,7 @@ static void net_timer_cb(lv_task_t *timer) {
         lv_led_off(led1);
 }
 
-static void gallery_fill(lv_obj_t *gallery_panel) {
+static void gallery_fill(lv_obj_t *panel) {
     static time_t _last_mtime = 0;
     static char **_cache = NULL;
     static int _index = 0;
@@ -176,12 +176,12 @@ static void gallery_fill(lv_obj_t *gallery_panel) {
 
     if (_cache) {
         srand(time(NULL));
-        lv_obj_t *img = lv_obj_get_child(gallery_panel, NULL);
+        lv_obj_t *img = lv_obj_get_child(panel, NULL);
         while (img) {
             if ((rand()%10) > 7) {
                 if (_cache[_index])
                     lv_img_set_src(img, _ssprintf("gallery/%s", _cache[_index]));
-                img = lv_obj_get_child(gallery_panel, img);
+                img = lv_obj_get_child(panel, img);
             }
             _index++;
             if (!_cache[_index])
