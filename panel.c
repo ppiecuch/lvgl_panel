@@ -59,7 +59,7 @@ static lv_obj_t *clock_label[8];
 static lv_obj_t *date_label, *weather_label;
 
 static lv_obj_t *led1;
-static lv_obj_t *controls_panel, *gallery_panel1, *gallery_panel2;
+static lv_obj_t *controls_panel, *gallery_panel;
 
 static char weatherString[64] = { 0 };
 
@@ -200,13 +200,6 @@ static void gallery_fill(lv_obj_t *gallery_panel) {
 }
 
 static void gallery_timer_cb(lv_task_t *timer) {
-    static lv_obj_t *gallery_panel = NULL;
-
-    if (gallery_panel == gallery_panel1)
-        gallery_panel = gallery_panel2;
-    else
-        gallery_panel = gallery_panel1;
-
     gallery_fill(gallery_panel);
 }
 
@@ -392,19 +385,11 @@ static void panel_init(char *prog_name) {
 
     // Gallery panel
 
-    const int gallery_height = (lv_obj_get_height(scr) - lv_obj_get_height(controls_panel)) / 2;
-
-    gallery_panel1 = lv_cont_create(scr, NULL);
-    lv_obj_set_pos(gallery_panel1, 0, lv_obj_get_height(controls_panel));
-    lv_obj_set_size(gallery_panel1, lv_obj_get_width(scr), gallery_height);
-    lv_obj_set_auto_realign(gallery_panel1, true);                    /*Auto realign when the size changes*/
-    lv_cont_set_layout(gallery_panel1, LV_LAYOUT_ROW_TOP);
-
-    gallery_panel2 = lv_cont_create(scr, NULL);
-    lv_obj_set_pos(gallery_panel2, 0, lv_obj_get_height(controls_panel) + gallery_height);
-    lv_obj_set_size(gallery_panel2, lv_obj_get_width(scr), gallery_height);
-    lv_obj_set_auto_realign(gallery_panel2, true);                    /*Auto realign when the size changes*/
-    lv_cont_set_layout(gallery_panel2, LV_LAYOUT_ROW_TOP);
+    gallery_panel = lv_cont_create(scr, NULL);
+    lv_obj_set_pos(gallery_panel, 0, lv_obj_get_height(controls_panel));
+    lv_obj_set_size(gallery_panel, lv_obj_get_width(scr), lv_obj_get_height(scr) - lv_obj_get_height(controls_panel));
+    lv_obj_set_auto_realign(gallery_panel, true);                    /*Auto realign when the size changes*/
+    lv_cont_set_layout(gallery_panel, LV_LAYOUT_ROW_TOP);
 
     lv_style_init(&style_gallery);
     lv_style_set_border_width(&style_gallery, LV_STATE_DEFAULT , 0);
@@ -414,21 +399,18 @@ static void panel_init(char *prog_name) {
     lv_style_set_pad_right(&style_gallery, LV_STATE_DEFAULT, 0);
     lv_style_set_pad_inner(&style_gallery, LV_STATE_DEFAULT, 0);
 
-    lv_obj_add_style(gallery_panel1, LV_CONT_PART_MAIN, &style_gallery);
-    lv_obj_add_style(gallery_panel2, LV_CONT_PART_MAIN, &style_gallery);
+    lv_obj_add_style(gallery_panel, LV_CONT_PART_MAIN, &style_gallery);
 
     printf("%s[INFO]%s Gallery panel is: %d x %d\n",
         GREEN, NORMAL_COLOR,
-        lv_obj_get_width(gallery_panel1), lv_obj_get_height(gallery_panel1));
+        lv_obj_get_width(gallery_panel), lv_obj_get_height(gallery_panel));
 
-    for (int i=0; i<8; i++) {
+    for (int i=0; i<4; i++) {
         // image placeholders
-        lv_img_create(gallery_panel1, NULL);
-        lv_img_create(gallery_panel2, NULL);
+        lv_img_create(gallery_panel, NULL);
     }
 
-    gallery_fill(gallery_panel1);
-    gallery_fill(gallery_panel2);
+    gallery_fill(gallery_panel);
 
     weather_timer_cb(NULL);
 
