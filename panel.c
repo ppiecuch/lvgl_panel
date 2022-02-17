@@ -187,15 +187,15 @@ static void gallery_fill(lv_obj_t *panel) {
             if (!_cache[_index])
                 _index = 0; // restart
         }
-    }
-
-    struct stat attr;
-    if (stat("gallery", &attr) == 0) {
-        _last_mtime = attr.st_mtime;
+    } else {
+      struct stat attr;
+      if (stat("gallery", &attr) == 0) {
         if (_last_mtime && _last_mtime < attr.st_mtime) {
             printf("%s[INFO]%s Gallery changed\n", GREEN, NORMAL_COLOR);
+            free(_cache); _cache = NULL;
         }
         _last_mtime = attr.st_mtime;
+      }
     }
 }
 
