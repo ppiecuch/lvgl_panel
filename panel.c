@@ -142,6 +142,18 @@ static void gallery_fill(lv_obj_t *panel) {
     static char **_cache = NULL;
     static int _index = 0;
 
+    if (_cache) {
+        // check for reloading
+        struct stat attr;
+        if (stat("gallery", &attr) == 0) {
+            if (_last_mtime && _last_mtime < attr.st_mtime) {
+                printf("%s[INFO]%s Gallery changed\n", GREEN, NORMAL_COLOR);
+                free(_cache); _cache = NULL;
+            }
+            _last_mtime = attr.st_mtime;
+        }
+    }
+
     if (!_cache) {
         printf("%s[INFO]%s Reload gallery cache\n", GREEN, NORMAL_COLOR);
         DIR *d = opendir("gallery");
@@ -186,16 +198,6 @@ static void gallery_fill(lv_obj_t *panel) {
             _index++;
             if (!_cache[_index])
                 _index = 0; // restart
-        }
-
-        // check for reloading
-        struct stat attr;
-        if (stat("gallery", &attr) == 0) {
-            if (_last_mtime && _last_mtime < attr.st_mtime) {
-                printf("%s[INFO]%s Gallery changed\n", GREEN, NORMAL_COLOR);
-                free(_cache); _cache = NULL;
-            }
-            _last_mtime = attr.st_mtime;
         }
     }
 }
