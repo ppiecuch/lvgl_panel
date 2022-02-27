@@ -148,8 +148,7 @@ static void gallery_fill(lv_obj_t *panel) {
         if (stat("gallery", &attr) == 0) {
             if (_last_mtime && _last_mtime < attr.st_mtime) {
                 printf("%s[INFO]%s Gallery changed\n", GREEN, NORMAL_COLOR);
-                if (*_cache) free(*_cache);
-                free(_cache); _cache = NULL;
+                exit(1);
             }
             _last_mtime = attr.st_mtime;
         }
