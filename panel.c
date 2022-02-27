@@ -148,6 +148,7 @@ static void gallery_fill(lv_obj_t *panel) {
         if (stat("gallery", &attr) == 0) {
             if (_last_mtime && _last_mtime < attr.st_mtime) {
                 printf("%s[INFO]%s Gallery changed\n", GREEN, NORMAL_COLOR);
+                if (*_cache) free(*_cache);
                 free(_cache); _cache = NULL;
             }
             _last_mtime = attr.st_mtime;
@@ -190,7 +191,7 @@ static void gallery_fill(lv_obj_t *panel) {
         srand(time(NULL));
         lv_obj_t *img = lv_obj_get_child(panel, NULL);
         while (img) {
-            if ((rand()%10) > 7) {
+            if ((rand()%10) > 6) {
                 if (_cache[_index])
                     lv_img_set_src(img, _ssprintf("gallery/%s", _cache[_index]));
                 img = lv_obj_get_child(panel, img);
