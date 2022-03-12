@@ -351,46 +351,11 @@ static void panel_init(char *prog_name) {
     openweather_coord[1] = cfg_getnfloat(cfg, "openweather_coord", 1);
     cfg_free(cfg);
 
-    // Time/date controls
-
-    controls_panel = lv_cont_create(scr, NULL);
-    lv_obj_set_pos(controls_panel, 0, 0);
-    lv_obj_set_size(controls_panel, lv_obj_get_width(scr), 150);
-
-    const int gl_h = 118, gl_w = 71;
-    int x_off = (lv_obj_get_width(scr) - 8 * gl_w) / 2;
-    for (int c=0; c<8; c++,x_off+=gl_w) {
-        clock_label[c] = lv_label_create(controls_panel, NULL);
-        lv_obj_set_pos(clock_label[c], x_off, 0);
-        lv_obj_set_size(clock_label[c], gl_w, gl_h);
-        lv_obj_add_style(clock_label[c], LV_LABEL_PART_MAIN, &style_clock);
-        lv_label_set_text(clock_label[c], "");
-        lv_label_set_long_mode(clock_label[c], LV_LABEL_LONG_EXPAND);
-    }
-
-    date_label = lv_label_create(controls_panel, NULL);
-    lv_obj_set_y(date_label, gl_h + 2);
-    lv_obj_set_size(date_label, lv_obj_get_width(controls_panel), 25);
-    lv_label_set_text(date_label, "");
-    lv_obj_add_style(date_label, LV_LABEL_PART_MAIN, &style_large);
-    lv_label_set_long_mode(date_label, LV_LABEL_LONG_EXPAND);
-
-    weather_label = lv_label_create(controls_panel, NULL);
-    lv_obj_set_y(weather_label, gl_h + 2);
-    lv_label_set_text(weather_label, "");
-    lv_obj_add_style(weather_label, LV_LABEL_PART_MAIN, &style_large);
-    lv_label_set_long_mode(weather_label, LV_LABEL_LONG_SROLL);
-
-    led1 = lv_led_create(controls_panel, NULL);
-    lv_obj_set_pos(led1, 785, 1);
-    lv_obj_set_size(led1, 14, 14);
-    lv_led_off(led1);
-
     // Gallery panel
 
     gallery_panel = lv_cont_create(scr, NULL);
-    lv_obj_set_pos(gallery_panel, 0, lv_obj_get_height(controls_panel));
-    lv_obj_set_size(gallery_panel, lv_obj_get_width(scr), lv_obj_get_height(scr) - lv_obj_get_height(controls_panel));
+    lv_obj_set_pos(gallery_panel, 0, 0);
+    lv_obj_set_size(gallery_panel, lv_obj_get_width(scr), lv_obj_get_height(scr) - 150);
     lv_obj_set_auto_realign(gallery_panel, true);                    /*Auto realign when the size changes*/
     lv_cont_set_layout(gallery_panel, LV_LAYOUT_ROW_TOP);
 
@@ -414,8 +379,44 @@ static void panel_init(char *prog_name) {
     }
 
     gallery_fill(gallery_panel);
-
     weather_timer_cb(NULL);
+
+    // Time/date controls
+
+    controls_panel = lv_cont_create(scr, NULL);
+    lv_obj_set_pos(controls_panel, 0, lv_obj_get_height(gallery_panel));
+    lv_obj_set_size(controls_panel, lv_obj_get_width(scr), 150);
+
+    const int gl_h = 118, gl_w = 71;
+    int x_off = (lv_obj_get_width(scr) - 8 * gl_w) / 2;
+    for (int c=0; c<8; c++,x_off+=gl_w) {
+        clock_label[c] = lv_label_create(controls_panel, NULL);
+        lv_obj_set_pos(clock_label[c], x_off, 3);
+        lv_obj_set_size(clock_label[c], gl_w, gl_h);
+        lv_obj_add_style(clock_label[c], LV_LABEL_PART_MAIN, &style_clock);
+        lv_label_set_text(clock_label[c], "");
+        lv_label_set_long_mode(clock_label[c], LV_LABEL_LONG_EXPAND);
+    }
+
+    date_label = lv_label_create(controls_panel, NULL);
+    lv_obj_set_y(date_label, gl_h + 4);
+    lv_obj_set_size(date_label, lv_obj_get_width(controls_panel), 25);
+    lv_label_set_text(date_label, "");
+    lv_obj_add_style(date_label, LV_LABEL_PART_MAIN, &style_large);
+    lv_label_set_long_mode(date_label, LV_LABEL_LONG_EXPAND);
+
+    weather_label = lv_label_create(controls_panel, NULL);
+    lv_obj_set_y(weather_label, gl_h + 4);
+    lv_label_set_text(weather_label, "");
+    lv_obj_add_style(weather_label, LV_LABEL_PART_MAIN, &style_large);
+    lv_label_set_long_mode(weather_label, LV_LABEL_LONG_SROLL);
+
+    led1 = lv_led_create(controls_panel, NULL);
+    lv_obj_set_pos(led1, 785, 1);
+    lv_obj_set_size(led1, 14, 14);
+    lv_led_off(led1);
+
+    // Start processing ..
 
     time_task = lv_task_create(time_timer_cb, 1000, LV_TASK_PRIO_MID, NULL);
     net_task = lv_task_create(net_timer_cb, 3000, LV_TASK_PRIO_LOW, NULL);
