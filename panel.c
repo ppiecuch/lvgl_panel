@@ -421,7 +421,7 @@ static void panel_init(char *prog_name) {
     time_task = lv_task_create(time_timer_cb, 1000, LV_TASK_PRIO_MID, NULL);
     net_task = lv_task_create(net_timer_cb, 3000, LV_TASK_PRIO_LOW, NULL);
     gallery_task = lv_task_create(gallery_timer_cb, 15000, LV_TASK_PRIO_LOW, NULL);
-    weather_task = lv_task_create(weather_timer_cb, 5*60000, LV_TASK_PRIO_LOW, NULL);
+    weather_task = lv_task_create(weather_timer_cb, 20*60000, LV_TASK_PRIO_LOW, NULL);
 }
 
 #ifdef __linux__
