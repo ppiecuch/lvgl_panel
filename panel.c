@@ -303,14 +303,22 @@ static void *fetch_weather_api(void *thread_data) {
 struct _mem_chunk weather_info = { NULL, 0, 0, false };
 
 static void weather_timer_cb(lv_task_t *timer) {
+    static int _lock_count = 0;
     if (weather_info.busy) {
         printf("%s[INFO]%s Download already in progress\n", GREEN, NORMAL_COLOR);
+        _lock_count++;
+        if (_lock_count > 3) {
+            printf("%s[INFO]%s Download locked. Restarting.\n", GREEN, NORMAL_COLOR);
+            exit(1);
+        }
         return;
     }
-    pthread_t thread;
+    static pthread_t thread;
     if (pthread_create(&thread, NULL, fetch_weather_api, &weather_info))
         printf("%s[ERROR]%s Couldn't create a thread.\n", RED, NORMAL_COLOR);
     pthread_detach(thread);
+
+    _lock_count = 0;
 }
 
 //  Main entry
@@ -421,7 +429,7 @@ static void panel_init(char *prog_name) {
     time_task = lv_task_create(time_timer_cb, 1000, LV_TASK_PRIO_MID, NULL);
     net_task = lv_task_create(net_timer_cb, 3000, LV_TASK_PRIO_LOW, NULL);
     gallery_task = lv_task_create(gallery_timer_cb, 15000, LV_TASK_PRIO_LOW, NULL);
-    weather_task = lv_task_create(weather_timer_cb, 20*60000, LV_TASK_PRIO_LOW, NULL);
+    weather_task = lv_task_create(weather_timer_cb, 10*60000, LV_TASK_PRIO_LOW, NULL);
 }
 
 #ifdef __linux__
