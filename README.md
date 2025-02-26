@@ -1,5 +1,7 @@
 ### Raspberry Pi Panel with 7'' LCD
---
+---
+
+![Simulator preview](panel.png)
 
 Format of `panel.ini`:
 
