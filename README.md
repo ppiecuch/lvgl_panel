@@ -1,6 +1,13 @@
 ### Raspberry Pi Panel with 7'' LCD
 --
 
+Format of `panel.ini`:
+
+```
+openweather_apikey = "<openweather-api-key>"
+openweather_coord = {52.4069, 16.9299}
+openweather_label = "Poznan"
+```
 
 #### Reference
   1. https://wallpaperaccess.com/blue-color-hd
