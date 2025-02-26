@@ -3,7 +3,7 @@
 
 ![Simulator preview](panel.png)
 
-Format of `panel.ini`:
+Format of `panel.ini` configuration file:
 
 ```
 openweather_apikey = "<openweather-api-key>"
