@@ -245,7 +245,8 @@ static size_t _curl_write_callback(void *contents, size_t size, size_t nmemb, vo
 }
 
 static void *fetch_weather_api(void *thread_data) {
-    const char *URL_BASE = "https://api.openweathermap.org/data/2.5/onecall?lat=%g&lon=%g&units=metric&appid=%s";
+    // https://openweathermap.org/one-call-transfer
+    const char *URL_BASE = "https://api.openweathermap.org/data/3.0/onecall?lat=%g&lon=%g&units=metric&appid=%s";
 
     struct _mem_chunk *chunk = (struct _mem_chunk*)thread_data;
     chunk->busy = true;
@@ -297,7 +298,7 @@ static void *fetch_weather_api(void *thread_data) {
         }
     }
     chunk->busy = false;
-	return NULL;
+    return NULL;
 }
 
 struct _mem_chunk weather_info = { NULL, 0, 0, false };
