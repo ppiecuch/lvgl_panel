@@ -517,15 +517,15 @@ static void hal_init() {
 #endif /* __linux__ */
 
 int main(int argc, char *argv[]) {
-	lv_init(); // LittlevGL init
-	lv_png_init(); // Png file support
+	lv_init(); // LVGL init
+	lv_png_init(); // png file support
 
 	hal_init();
 
 	// Panel initialization
 	panel_init(argv[0]);
 
-	// Handle LitlevGL tasks (tickless mode)
+	// Handle LVGL tasks (tickless mode)
 	while (1) {
 		lv_tick_inc(5);
 		lv_task_handler();
