@@ -134,7 +134,8 @@ static void net_timer_cb(lv_task_t *timer) {
 
 static void gallery_fill(lv_obj_t *panel) {
 	static time_t _last_mtime = 0;
-	static char **_cache = NULL;
+	static intptr_t *_cache = NULL;
+	static char *_strings = NULL;
 	static int _index = 0;
 
 	if (_cache) {
@@ -153,31 +154,35 @@ static void gallery_fill(lv_obj_t *panel) {
 		printf("%s[INFO]%s Reload gallery cache\n", GREEN, NORMAL_COLOR);
 		DIR *d = opendir("gallery");
 		if (d) {
-			int count = 0, index = 0, alloc = 2048, cache_alloc = 512;
-			_cache = malloc(cache_alloc * sizeof(char *));
-			char *ptr = malloc(alloc);
+			int count = 0, index = 0, alloc = 1024*10, cache_alloc = 1024;
+			_cache = calloc(cache_alloc, sizeof(intptr_t));
+			_strings = calloc(1, alloc);
 			struct dirent *dir;
 			while ((dir = readdir(d)) != NULL) {
 				if (dir->d_type == DT_REG) {
 					if (strstr(dir->d_name, ".png") != NULL) {
-						if (index + strlen(dir->d_name) + 1 >= alloc) {
-							alloc += 2048;
-							ptr = realloc(ptr, alloc);
+						if (index + strlen(dir->d_name) + 2 >= alloc) {
+							alloc += LV_MATH_MAX(strlen(dir->d_name) + 2, 2048);
+							_strings = realloc(_strings, alloc);
 						}
-						strcpy(ptr + index, dir->d_name);
-						_cache[count] = ptr + index;
+						strcpy(_strings + index, dir->d_name);
+						_cache[count] = index;
 						index += strlen(dir->d_name) + 1;
 						count++;
 						if (count == cache_alloc) {
 							cache_alloc += 128;
-							_cache = realloc(_cache, cache_alloc * sizeof(char *));
+							_cache = realloc(_cache, cache_alloc * sizeof(intptr_t));
 						}
 					}
 				}
 			}
-			_cache[count] = 0; // last entry
+			_strings[index] = 0;
+			_cache[count] = index; // last entry
 			closedir(d);
-			printf("%s[INFO]%s Cached %d entries\n", GREEN, NORMAL_COLOR, count);
+			if (count == 0)
+			    printf("%s[WARN]%s Gallery is missing\n", RED, NORMAL_COLOR);
+			else
+			    printf("%s[INFO]%s Cached %d entries\n", GREEN, NORMAL_COLOR, count);
 		}
 	}
 
@@ -186,13 +191,15 @@ static void gallery_fill(lv_obj_t *panel) {
 		lv_obj_t *img = lv_obj_get_child(panel, NULL);
 		while (img) {
 			if ((rand() % 10) > 6) {
-				if (_cache[_index])
-					lv_img_set_src(img, _ssprintf("gallery/%s", _cache[_index]));
+			    const char *file = _strings + _cache[_index];
+			    if (*file)
+					lv_img_set_src(img, _ssprintf("gallery/%s", file));
 				img = lv_obj_get_child(panel, img);
 			}
-			_index++;
-			if (!_cache[_index])
-				_index = 0; // restart
+			if (_strings[_cache[_index]] == 0)
+			    _index = 0; // restart
+			else
+			    _index++;
 		}
 	}
 }
