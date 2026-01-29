@@ -12,6 +12,9 @@ CC = gcc
 CXX = g++
 CFLAGS = -Wall -Wshadow -Wundef
 CFLAGS += -O3 -g3 -I./ -I./deps -I$(LVGL_DIR)
+CFLAGS += -DPANEL_VERSION=\"0.1.0\" \
+          -DPANEL_BUILD_DATE=\"$(shell date +%Y-%m-%d)\" \
+          -DPANEL_BUILD_HASH=\"$(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)\"
 
 # directory for local libs
 LDFLAGS = -L$(DESTDIR)$(PREFIX)/lib
