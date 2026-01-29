@@ -24,6 +24,8 @@
 #include <time.h>
 #include <unistd.h>
 
+#include "version.h"
+
 #define NORMAL_COLOR "\x1B[0m"
 #define GREEN "\x1B[32m"
 #define BLUE "\x1B[34m"
@@ -58,6 +60,7 @@ static lv_obj_t *clock_label[8];
 static lv_obj_t *date_label, *weather_label;
 
 static lv_obj_t *led1;
+static lv_obj_t *version_label;
 static lv_obj_t *controls_panel, *gallery_panel;
 
 static char weatherString[64] = { 0 };
@@ -96,6 +99,7 @@ static void time_timer_cb(lv_task_t *timer) {
 
 static int get_current_network_speed_cb() {
 	static unsigned long int kb_sent = 0, kb_sent_prev = 0;
+	static bool first_call = true;
 
 	FILE *fp = fopen("/proc/net/dev", "r");
 	if (fp) {
@@ -115,10 +119,17 @@ static int get_current_network_speed_cb() {
 			}
 		}
 
+		fclose(fp);
+
+		if (first_call) {
+			kb_sent_prev = kb_sent;
+			first_call = false;
+			return 0;
+		}
+
 		unsigned long int net_speed = (kb_sent - kb_sent_prev) * 2;
 		kb_sent_prev = kb_sent;
 
-		fclose(fp);
 		return net_speed;
 	} else
 		return -1;
@@ -135,7 +146,7 @@ static void net_timer_cb(lv_task_t *timer) {
 static void gallery_fill(lv_obj_t *panel) {
 	static time_t _last_mtime = 0;
 	static char **_cache = NULL;
-	static int _index = 0;
+	static int _count = 0;
 
 	if (_cache) {
 		// check for reloading
@@ -176,23 +187,31 @@ static void gallery_fill(lv_obj_t *panel) {
 				}
 			}
 			_cache[count] = 0; // last entry
+			_count = count;
 			closedir(d);
 			printf("%s[INFO]%s Cached %d entries\n", GREEN, NORMAL_COLOR, count);
 		}
 	}
 
-	if (_cache) {
-		srand(time(NULL));
+	if (_cache && _count > 0) {
+		// Fisher-Yates shuffle of indices
+		int *indices = alloca(_count * sizeof(int));
+		for (int i = 0; i < _count; i++)
+			indices[i] = i;
+		for (int i = _count - 1; i > 0; i--) {
+			int j = rand() % (i + 1);
+			int tmp = indices[i];
+			indices[i] = indices[j];
+			indices[j] = tmp;
+		}
+
+		// Assign first 4 shuffled entries to image slots
+		int slot = 0;
 		lv_obj_t *img = lv_obj_get_child(panel, NULL);
-		while (img) {
-			if ((rand() % 10) > 6) {
-				if (_cache[_index])
-					lv_img_set_src(img, _ssprintf("gallery/%s", _cache[_index]));
-				img = lv_obj_get_child(panel, img);
-			}
-			_index++;
-			if (!_cache[_index])
-				_index = 0; // restart
+		while (img && slot < _count) {
+			lv_img_set_src(img, _ssprintf("gallery/%s", _cache[indices[slot]]));
+			img = lv_obj_get_child(panel, img);
+			slot++;
 		}
 	}
 }
@@ -229,7 +248,7 @@ static size_t _curl_write_callback(void *contents, size_t size, size_t nmemb, vo
 	struct _mem_chunk *chunk = (struct _mem_chunk *)userp;
 
 	/* realloc can be slow, therefore increase buffer to nearest 2^n */
-	chunk->buf = realloc(chunk->buf, round_up(chunk->size + contents_size));
+	chunk->buf = realloc(chunk->buf, round_up(chunk->size + contents_size + 1));
 	if (!chunk->buf)
 		return 0;
 	/* append data and increment size */
@@ -273,22 +292,22 @@ static void *fetch_weather_api(void *thread_data) {
 						}
 					}
 				} else {
-					strcpy(weatherString, "");
+					weatherString[0] = '\0';
+					int ws_off = 0;
 					cJSON *current = cJSON_GetObjectItemCaseSensitive(json, "current");
 					if (current) {
 						cJSON *temp = cJSON_GetObjectItemCaseSensitive(current, "temp");
 						if (temp && cJSON_IsNumber(temp))
-							strcat(weatherString, _ssprintf("Temp. %d\x7f"
-															"C",
-														  temp->valueint));
+							ws_off += snprintf(weatherString + ws_off, sizeof(weatherString) - ws_off,
+								"Temp. %d\x7f" "C", temp->valueint);
 						cJSON *feels = cJSON_GetObjectItemCaseSensitive(current, "feels_like");
-						if (feels && cJSON_IsNumber(feels))
-							strcat(weatherString, _ssprintf(" / Feels %d\x7f"
-															"C",
-														  feels->valueint));
+						if (feels && cJSON_IsNumber(feels) && ws_off < (int)sizeof(weatherString))
+							ws_off += snprintf(weatherString + ws_off, sizeof(weatherString) - ws_off,
+								" / Feels %d\x7f" "C", feels->valueint);
 						cJSON *clouds = cJSON_GetObjectItemCaseSensitive(current, "clouds");
-						if (clouds && cJSON_IsNumber(clouds))
-							strcat(weatherString, _ssprintf(" / Clouds %d%%", clouds->valueint));
+						if (clouds && cJSON_IsNumber(clouds) && ws_off < (int)sizeof(weatherString))
+							ws_off += snprintf(weatherString + ws_off, sizeof(weatherString) - ws_off,
+								" / Clouds %d%%", clouds->valueint);
 					} else
 						printf("%s[ERROR]%s Unknown JSON data: %s\n", RED, NORMAL_COLOR, chunk->buf);
 				}
@@ -394,8 +413,17 @@ static void panel_init(char *prog_name) {
 	lv_obj_set_pos(controls_panel, 0, lv_obj_get_height(gallery_panel));
 	lv_obj_set_size(controls_panel, lv_obj_get_width(scr), 150);
 
+	// Version label (top-left of controls panel)
+	static lv_style_t style_version;
+	lv_style_init(&style_version);
+	lv_style_set_text_font(&style_version, LV_STATE_DEFAULT, &lv_font_unscii_8);
+	version_label = lv_label_create(controls_panel, NULL);
+	lv_obj_set_pos(version_label, 4, 3);
+	lv_obj_add_style(version_label, LV_LABEL_PART_MAIN, &style_version);
+	lv_label_set_text(version_label, "v" PANEL_VERSION "\n" PANEL_BUILD_DATE "\n" PANEL_BUILD_HASH);
+
 	const int gl_h = 118, gl_w = 71;
-	int x_off = (lv_obj_get_width(scr) - 8 * gl_w) / 2;
+	int x_off = 800 - 8 * gl_w - 14;
 	for (int c = 0; c < 8; c++, x_off += gl_w) {
 		clock_label[c] = lv_label_create(controls_panel, NULL);
 		lv_obj_set_pos(clock_label[c], x_off, 3);
@@ -517,6 +545,7 @@ static void hal_init() {
 #endif /* __linux__ */
 
 int main(int argc, char *argv[]) {
+	srand(time(NULL));
 	lv_init(); // LVGL init
 	lv_png_init(); // png file support
 

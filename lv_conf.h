@@ -3,7 +3,6 @@
  *
  */
 
-
 #if 1 /*Set it to "1" to enable content*/
 
 #ifndef LV_CONF_H
@@ -362,6 +361,7 @@ typedef void * lv_indev_drv_user_data_t;            /*Type of user data in the i
 /*Pixel perfect monospace font
  * http://pelulamu.net/unscii/ */
 #define LV_FONT_UNSCII_8     1
+#define LV_FONT_UNSCII_16     1
 
 /* Optionally declare your custom fonts here.
  * You can use these fonts as default font too
