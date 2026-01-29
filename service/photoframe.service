@@ -1,0 +1,19 @@
+[Unit]
+Description=Zapsi Service
+ConditionPathExists=/var/app/panel
+After=network.target
+[Service]
+Type=simple
+User=root
+Group=root
+LimitNOFILE=1024
+Restart=on-failure
+RestartSec=10
+WorkingDirectory=/var/app
+ExecStart=/var/app/panel
+PermissionsStartOnly=true
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=photoframe
+[Install]
+WantedBy=multi-user.target
