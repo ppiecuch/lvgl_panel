@@ -145,7 +145,8 @@ static void net_timer_cb(lv_task_t *timer) {
 
 static void gallery_fill(lv_obj_t *panel) {
 	static time_t _last_mtime = 0;
-	static char **_cache = NULL;
+	static intptr_t *_cache = NULL;
+	static char *_strings = NULL;
 	static int _count = 0;
 
 	if (_cache) {
@@ -164,36 +165,42 @@ static void gallery_fill(lv_obj_t *panel) {
 		printf("%s[INFO]%s Reload gallery cache\n", GREEN, NORMAL_COLOR);
 		DIR *d = opendir("gallery");
 		if (d) {
-			int count = 0, index = 0, alloc = 2048, cache_alloc = 512;
-			_cache = malloc(cache_alloc * sizeof(char *));
-			char *ptr = malloc(alloc);
+			int count = 0, index = 0, alloc = 1024 * 10, cache_alloc = 1024;
+			_cache = calloc(cache_alloc, sizeof(intptr_t));
+			_strings = calloc(1, alloc);
 			struct dirent *dir;
 			while ((dir = readdir(d)) != NULL) {
 				if (dir->d_type == DT_REG) {
 					if (strstr(dir->d_name, ".png") != NULL) {
-						if (index + strlen(dir->d_name) + 1 >= alloc) {
-							alloc += 2048;
-							ptr = realloc(ptr, alloc);
+						if (index + strlen(dir->d_name) + 2 >= alloc) {
+							alloc += LV_MATH_MAX(strlen(dir->d_name) + 2, 2048);
+							_strings = realloc(_strings, alloc);
 						}
-						strcpy(ptr + index, dir->d_name);
-						_cache[count] = ptr + index;
+						strcpy(_strings + index, dir->d_name);
+						_cache[count] = index;
 						index += strlen(dir->d_name) + 1;
 						count++;
 						if (count == cache_alloc) {
 							cache_alloc += 128;
-							_cache = realloc(_cache, cache_alloc * sizeof(char *));
+							_cache = realloc(_cache, cache_alloc * sizeof(intptr_t));
 						}
 					}
 				}
 			}
-			_cache[count] = 0; // last entry
+			_strings[index] = 0;
 			_count = count;
+			_cache[count] = index; // last entry
 			closedir(d);
-			printf("%s[INFO]%s Cached %d entries\n", GREEN, NORMAL_COLOR, count);
+			if (count == 0)
+				printf("%s[WARN]%s Gallery is missing\n", RED, NORMAL_COLOR);
+			else
+				printf("%s[INFO]%s Cached %d entries\n", GREEN, NORMAL_COLOR, count);
 		}
 	}
 
 	if (_cache && _count > 0) {
+		static int _last_partial = -1;
+
 		// Fisher-Yates shuffle of indices
 		int *indices = alloca(_count * sizeof(int));
 		for (int i = 0; i < _count; i++)
@@ -205,13 +212,34 @@ static void gallery_fill(lv_obj_t *panel) {
 			indices[j] = tmp;
 		}
 
-		// Assign first 4 shuffled entries to image slots
-		int slot = 0;
-		lv_obj_t *img = lv_obj_get_child(panel, NULL);
-		while (img && slot < _count) {
-			lv_img_set_src(img, _ssprintf("gallery/%s", _cache[indices[slot]]));
-			img = lv_obj_get_child(panel, img);
-			slot++;
+		// Pin last partial image as first, swap it into position 0
+		if (_last_partial >= 0) {
+			for (int i = 0; i < _count; i++) {
+				if (indices[i] == _last_partial) {
+					indices[i] = indices[0];
+					indices[0] = _last_partial;
+					break;
+				}
+			}
+		}
+
+		// Fill image slots until screen width is covered
+		int slot = 0, filled_w = 0;
+		int panel_w = lv_obj_get_width(panel);
+		_last_partial = -1;
+		lv_obj_t *img = lv_obj_get_child_back(panel, NULL);
+		while (img) {
+			if (slot < _count && filled_w < panel_w) {
+				lv_img_set_src(img, _ssprintf("gallery/%s", _strings + _cache[indices[slot]]));
+				lv_obj_set_hidden(img, false);
+				filled_w += lv_obj_get_width(img);
+				if (filled_w > panel_w)
+					_last_partial = indices[slot];
+				slot++;
+			} else {
+				lv_obj_set_hidden(img, true);
+			}
+			img = lv_obj_get_child_back(panel, img);
 		}
 	}
 }
@@ -299,15 +327,19 @@ static void *fetch_weather_api(void *thread_data) {
 						cJSON *temp = cJSON_GetObjectItemCaseSensitive(current, "temp");
 						if (temp && cJSON_IsNumber(temp))
 							ws_off += snprintf(weatherString + ws_off, sizeof(weatherString) - ws_off,
-								"Temp. %d\x7f" "C", temp->valueint);
+									"Temp. %d\x7f"
+									"C",
+									temp->valueint);
 						cJSON *feels = cJSON_GetObjectItemCaseSensitive(current, "feels_like");
 						if (feels && cJSON_IsNumber(feels) && ws_off < (int)sizeof(weatherString))
 							ws_off += snprintf(weatherString + ws_off, sizeof(weatherString) - ws_off,
-								" / Feels %d\x7f" "C", feels->valueint);
+									" / Feels %d\x7f"
+									"C",
+									feels->valueint);
 						cJSON *clouds = cJSON_GetObjectItemCaseSensitive(current, "clouds");
 						if (clouds && cJSON_IsNumber(clouds) && ws_off < (int)sizeof(weatherString))
 							ws_off += snprintf(weatherString + ws_off, sizeof(weatherString) - ws_off,
-								" / Clouds %d%%", clouds->valueint);
+									" / Clouds %d%%", clouds->valueint);
 					} else
 						printf("%s[ERROR]%s Unknown JSON data: %s\n", RED, NORMAL_COLOR, chunk->buf);
 				}
@@ -392,6 +424,7 @@ static void panel_init(char *prog_name) {
 	lv_style_set_pad_left(&style_gallery, LV_STATE_DEFAULT, 0);
 	lv_style_set_pad_right(&style_gallery, LV_STATE_DEFAULT, 0);
 	lv_style_set_pad_inner(&style_gallery, LV_STATE_DEFAULT, 0);
+	lv_style_set_clip_corner(&style_gallery, LV_STATE_DEFAULT, true);
 
 	lv_obj_add_style(gallery_panel, LV_CONT_PART_MAIN, &style_gallery);
 
@@ -399,9 +432,9 @@ static void panel_init(char *prog_name) {
 			GREEN, NORMAL_COLOR,
 			lv_obj_get_width(gallery_panel), lv_obj_get_height(gallery_panel));
 
-	for (int i = 0; i < 4; i++) {
-		// image placeholders
-		lv_img_create(gallery_panel, NULL);
+	for (int i = 0; i < 10; i++) {
+		lv_obj_t *img = lv_img_create(gallery_panel, NULL);
+		lv_obj_set_click(img, false);
 	}
 
 	gallery_fill(gallery_panel);
@@ -423,7 +456,7 @@ static void panel_init(char *prog_name) {
 	lv_label_set_text(version_label, "v" PANEL_VERSION "\n" PANEL_BUILD_DATE "\n" PANEL_BUILD_HASH);
 
 	const int gl_h = 118, gl_w = 71;
-	int x_off = 800 - 8 * gl_w - 14;
+	int x_off = 800 - 8 * gl_w - 30;
 	for (int c = 0; c < 8; c++, x_off += gl_w) {
 		clock_label[c] = lv_label_create(controls_panel, NULL);
 		lv_obj_set_pos(clock_label[c], x_off, 3);
