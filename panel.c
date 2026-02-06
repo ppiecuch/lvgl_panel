@@ -37,6 +37,7 @@ LV_FONT_DECLARE(digital_clock)
 static char *openweather_apikey = NULL;
 static char *openweather_label = NULL;
 static double openweather_coord[2] = { 0, 0 };
+static long scroll_step = 27;
 
 // display buffer size - not sure if this size is really needed
 #define LV_BUF_SIZE 384000 // 800x480
@@ -53,14 +54,17 @@ static const char *DAY[] = { "Sunday", "Monday", "Tuesday", "Wednesday", "Thursd
 static const char *MONTH[] = { "January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December" };
 
 static lv_style_t style_large, style_clock, style_gallery;
-static const lv_task_t *time_task, *net_task, *gallery_task, *weather_task;
+static const lv_task_t *time_task, *net_task, *weather_task;
 static const lv_font_t *font_large, *font_normal;
 
 static lv_obj_t *clock_label[8];
 static lv_obj_t *date_label, *weather_label;
 
 static lv_obj_t *led1;
-static lv_obj_t *version_label;
+static lv_obj_t *version_label, *fps_label;
+static lv_obj_t *plot_chart;
+static lv_chart_series_t *fps_series, *pxs_series;
+#define PLOT_POINTS 60
 static lv_obj_t *controls_panel, *gallery_panel;
 
 static char weatherString[64] = { 0 };
@@ -143,110 +147,308 @@ static void net_timer_cb(lv_task_t *timer) {
 		lv_led_off(led1);
 }
 
-static void gallery_fill(lv_obj_t *panel) {
-	static time_t _last_mtime = 0;
-	static intptr_t *_cache = NULL;
-	static char *_strings = NULL;
-	static int _count = 0;
+// Gallery cache and width-group index
+static intptr_t *g_cache = NULL;   // string offsets into g_strings
+static char *g_strings = NULL;     // packed filenames
+static int g_count = 0;
+static time_t g_last_mtime = 0;
 
-	if (_cache) {
-		// check for reloading
+// Width group: images sharing the same pixel width
+#define MAX_WIDTH_GROUPS 32
+struct width_group {
+	int width;
+	int count;
+	int *indices;  // indices into g_cache
+};
+static struct width_group g_groups[MAX_WIDTH_GROUPS];
+static int g_num_groups = 0;
+
+// Infinite horizontal scroll gallery
+#define RESHUFFLE_EVERY_N_LOOPS  3
+#define STRIP_MAX_IMGS 256
+
+struct strip_img {
+	int cache_idx;   // index into g_cache for the filename
+	int base_x;      // logical X position in the full strip
+	int width;       // pixel width of this image
+	lv_obj_t *obj;   // non-NULL only while visible (materialized)
+};
+static struct strip_img g_strip[STRIP_MAX_IMGS];
+static int g_strip_count = 0;
+static int g_total_strip_w = 0;
+static int g_scroll_offset = 0;
+static int g_loop_count = 0;
+static lv_task_t *g_scroll_task = NULL;
+static struct timespec g_scroll_start;
+
+static struct width_group *find_width_group(int width) {
+	for (int i = 0; i < g_num_groups; i++) {
+		if (g_groups[i].width == width)
+			return &g_groups[i];
+	}
+	return NULL;
+}
+
+static int pick_random_from_group(struct width_group *grp, int exclude_idx) {
+	if (grp->count <= 1)
+		return grp->indices[0];
+	int pick;
+	do {
+		pick = grp->indices[rand() % grp->count];
+	} while (pick == exclude_idx && grp->count > 1);
+	return pick;
+}
+
+static void gallery_build_strip(lv_obj_t *panel);
+static void gallery_start_scroll(void);
+
+static void gallery_update_positions(int offset) {
+	int panel_w = lv_obj_get_width(gallery_panel);
+	for (int i = 0; i < g_strip_count; i++) {
+		int x = g_strip[i].base_x + offset;
+		// Wrap into [0, g_total_strip_w)
+		x = ((x % g_total_strip_w) + g_total_strip_w) % g_total_strip_w;
+		// Allow negative x so images exiting left stay until right edge is off-screen
+		if (x > panel_w)
+			x -= g_total_strip_w;
+		bool visible = (x + g_strip[i].width > 0) && (x < panel_w);
+		if (visible) {
+			if (!g_strip[i].obj) {
+				g_strip[i].obj = lv_img_create(gallery_panel, NULL);
+				if (g_strip[i].obj) {
+					lv_obj_set_click(g_strip[i].obj, false);
+					lv_img_set_src(g_strip[i].obj,
+						_ssprintf("gallery/%s", g_strings + g_cache[g_strip[i].cache_idx]));
+				}
+			}
+			if (g_strip[i].obj)
+				lv_obj_set_pos(g_strip[i].obj, x, 0);
+		} else {
+			if (g_strip[i].obj) {
+				lv_obj_del(g_strip[i].obj);
+				g_strip[i].obj = NULL;
+			}
+		}
+	}
+}
+
+static void gallery_scroll_tick(lv_task_t *task) {
+	(void)task;
+	if (g_total_strip_w == 0)
+		return;
+
+	struct timespec now;
+	clock_gettime(CLOCK_MONOTONIC, &now);
+
+	// Compute offset from real elapsed time
+	int64_t elapsed_ms = (now.tv_sec - g_scroll_start.tv_sec) * 1000LL
+		+ (now.tv_nsec - g_scroll_start.tv_nsec) / 1000000LL;
+
+	// FPS & pixel speed counter
+	static int frame_count = 0;
+	static int prev_scroll_px = 0;
+	static int px_moved_accum = 0;
+	static struct timespec fps_prev = {0, 0};
+	frame_count++;
+
+	int raw_px = (int)((elapsed_ms * scroll_step) / 1000);
+	if (raw_px >= prev_scroll_px)
+		px_moved_accum += raw_px - prev_scroll_px;
+	prev_scroll_px = raw_px;
+
+	int64_t fps_elapsed = (now.tv_sec - fps_prev.tv_sec) * 1000LL
+		+ (now.tv_nsec - fps_prev.tv_nsec) / 1000000LL;
+	if (fps_elapsed >= 1000) {
+		int measured_fps = frame_count;
+		int measured_pxs = px_moved_accum;
+		if (fps_label)
+			lv_label_set_text(fps_label,
+				_ssprintf("%d fps  %d px/s", measured_fps, measured_pxs));
+		if (plot_chart) {
+			lv_chart_set_next(plot_chart, fps_series, measured_fps);
+			lv_chart_set_next(plot_chart, pxs_series, measured_pxs);
+		}
+		frame_count = 0;
+		px_moved_accum = 0;
+		fps_prev = now;
+	}
+	// offset in pixels (negative = scrolling left)
+	int offset = -(int)((elapsed_ms * scroll_step) / 1000);
+	// Normalize to one loop range
+	int loop_offset = offset % g_total_strip_w;
+	g_scroll_offset = loop_offset;
+	gallery_update_positions(loop_offset);
+
+	// Detect completed loops
+	int loops = -(offset / g_total_strip_w);
+	if (loops > g_loop_count) {
+		g_loop_count = loops;
+		printf("%s[INFO]%s Gallery scroll loop %d completed\n", GREEN, NORMAL_COLOR, g_loop_count);
+
+		// Check for gallery directory changes
 		struct stat attr;
 		if (stat("gallery", &attr) == 0) {
-			if (_last_mtime && _last_mtime < attr.st_mtime) {
+			if (g_last_mtime && g_last_mtime < attr.st_mtime) {
 				printf("%s[INFO]%s Gallery changed\n", GREEN, NORMAL_COLOR);
 				exit(1);
 			}
-			_last_mtime = attr.st_mtime;
-		}
-	}
-
-	if (!_cache) {
-		printf("%s[INFO]%s Reload gallery cache\n", GREEN, NORMAL_COLOR);
-		DIR *d = opendir("gallery");
-		if (d) {
-			int count = 0, index = 0, alloc = 1024 * 10, cache_alloc = 1024;
-			_cache = calloc(cache_alloc, sizeof(intptr_t));
-			_strings = calloc(1, alloc);
-			struct dirent *dir;
-			while ((dir = readdir(d)) != NULL) {
-				if (dir->d_type == DT_REG) {
-					if (strstr(dir->d_name, ".png") != NULL) {
-						if (index + strlen(dir->d_name) + 2 >= alloc) {
-							alloc += LV_MATH_MAX(strlen(dir->d_name) + 2, 2048);
-							_strings = realloc(_strings, alloc);
-						}
-						strcpy(_strings + index, dir->d_name);
-						_cache[count] = index;
-						index += strlen(dir->d_name) + 1;
-						count++;
-						if (count == cache_alloc) {
-							cache_alloc += 128;
-							_cache = realloc(_cache, cache_alloc * sizeof(intptr_t));
-						}
-					}
-				}
-			}
-			_strings[index] = 0;
-			_count = count;
-			_cache[count] = index; // last entry
-			closedir(d);
-			if (count == 0)
-				printf("%s[WARN]%s Gallery is missing\n", RED, NORMAL_COLOR);
-			else
-				printf("%s[INFO]%s Cached %d entries\n", GREEN, NORMAL_COLOR, count);
-		}
-	}
-
-	if (_cache && _count > 0) {
-		static int _last_partial = -1;
-
-		// Fisher-Yates shuffle of indices
-		int *indices = alloca(_count * sizeof(int));
-		for (int i = 0; i < _count; i++)
-			indices[i] = i;
-		for (int i = _count - 1; i > 0; i--) {
-			int j = rand() % (i + 1);
-			int tmp = indices[i];
-			indices[i] = indices[j];
-			indices[j] = tmp;
 		}
 
-		// Pin last partial image as first, swap it into position 0
-		if (_last_partial >= 0) {
-			for (int i = 0; i < _count; i++) {
-				if (indices[i] == _last_partial) {
-					indices[i] = indices[0];
-					indices[0] = _last_partial;
-					break;
-				}
-			}
-		}
-
-		// Fill image slots until screen width is covered
-		int slot = 0, filled_w = 0;
-		int panel_w = lv_obj_get_width(panel);
-		_last_partial = -1;
-		lv_obj_t *img = lv_obj_get_child_back(panel, NULL);
-		while (img) {
-			if (slot < _count && filled_w < panel_w) {
-				lv_img_set_src(img, _ssprintf("gallery/%s", _strings + _cache[indices[slot]]));
-				lv_obj_set_hidden(img, false);
-				filled_w += lv_obj_get_width(img);
-				if (filled_w > panel_w)
-					_last_partial = indices[slot];
-				slot++;
-			} else {
-				lv_obj_set_hidden(img, true);
-			}
-			img = lv_obj_get_child_back(panel, img);
+		if (g_loop_count % RESHUFFLE_EVERY_N_LOOPS == 0) {
+			printf("%s[INFO]%s Reshuffling gallery strip\n", GREEN, NORMAL_COLOR);
+			gallery_build_strip(gallery_panel);
+			gallery_start_scroll();
 		}
 	}
 }
 
-static void gallery_timer_cb(lv_task_t *timer) {
-	gallery_fill(gallery_panel);
+static void gallery_build_strip(lv_obj_t *panel) {
+	if (g_count == 0)
+		return;
+
+	// Dispose any existing materialized objects
+	for (int i = 0; i < g_strip_count; i++) {
+		if (g_strip[i].obj) {
+			lv_obj_del(g_strip[i].obj);
+			g_strip[i].obj = NULL;
+		}
+	}
+	g_strip_count = 0;
+	g_total_strip_w = 0;
+
+	// Shuffle indices
+	int n = g_count < STRIP_MAX_IMGS ? g_count : STRIP_MAX_IMGS;
+	int *indices = alloca(g_count * sizeof(int));
+	for (int i = 0; i < g_count; i++)
+		indices[i] = i;
+	for (int i = g_count - 1; i > 0; i--) {
+		int j = rand() % (i + 1);
+		int tmp = indices[i];
+		indices[i] = indices[j];
+		indices[j] = tmp;
+	}
+
+	// Probe image widths with a temporary object
+	lv_obj_t *probe = lv_img_create(panel, NULL);
+	lv_obj_set_hidden(probe, true);
+
+	int x = 0;
+	for (int i = 0; i < n; i++) {
+		int idx = indices[i];
+		lv_img_set_src(probe, _ssprintf("gallery/%s", g_strings + g_cache[idx]));
+		int w = lv_obj_get_width(probe);
+
+		g_strip[i].cache_idx = idx;
+		g_strip[i].base_x = x;
+		g_strip[i].width = w;
+		g_strip[i].obj = NULL;  // not materialized yet
+		x += w;
+	}
+	lv_obj_del(probe);
+
+	g_strip_count = n;
+	g_total_strip_w = x;
+
+	printf("%s[INFO]%s Built scroll strip: %d images, total width %dpx\n",
+		GREEN, NORMAL_COLOR, g_strip_count, g_total_strip_w);
+
+	// Materialize initially visible images
+	gallery_update_positions(0);
 }
+
+static void gallery_start_scroll(void) {
+	if (g_total_strip_w == 0)
+		return;
+
+	g_loop_count = 0;
+	clock_gettime(CLOCK_MONOTONIC, &g_scroll_start);
+
+	if (!g_scroll_task)
+		g_scroll_task = lv_task_create(gallery_scroll_tick, 16, LV_TASK_PRIO_HIGH, NULL);
+
+	printf("%s[INFO]%s Scroll started: speed %dpx/s, strip %dpx\n",
+		GREEN, NORMAL_COLOR, (int)scroll_step, g_total_strip_w);
+}
+
+static void gallery_cache_load(void) {
+	printf("%s[INFO]%s Reload gallery cache\n", GREEN, NORMAL_COLOR);
+	DIR *d = opendir("gallery");
+	if (!d)
+		return;
+
+	int count = 0, index = 0, alloc = 1024 * 10, cache_alloc = 1024;
+	g_cache = calloc(cache_alloc, sizeof(intptr_t));
+	g_strings = calloc(1, alloc);
+	struct dirent *dir;
+	while ((dir = readdir(d)) != NULL) {
+		if (dir->d_type == DT_REG) {
+			if (strstr(dir->d_name, ".png") != NULL) {
+				if (index + (int)strlen(dir->d_name) + 2 >= alloc) {
+					alloc += LV_MATH_MAX((int)strlen(dir->d_name) + 2, 2048);
+					g_strings = realloc(g_strings, alloc);
+				}
+				strcpy(g_strings + index, dir->d_name);
+				g_cache[count] = index;
+				index += strlen(dir->d_name) + 1;
+				count++;
+				if (count == cache_alloc) {
+					cache_alloc += 128;
+					g_cache = realloc(g_cache, cache_alloc * sizeof(intptr_t));
+				}
+			}
+		}
+	}
+	g_strings[index] = 0;
+	g_count = count;
+	closedir(d);
+
+	struct stat attr;
+	if (stat("gallery", &attr) == 0)
+		g_last_mtime = attr.st_mtime;
+
+	if (count == 0) {
+		printf("%s[WARN]%s Gallery is missing\n", RED, NORMAL_COLOR);
+		return;
+	}
+	printf("%s[INFO]%s Cached %d entries\n", GREEN, NORMAL_COLOR, count);
+}
+
+static void gallery_build_width_groups(lv_obj_t *panel) {
+	// Temporarily load each image to discover its width
+	lv_obj_t *probe = lv_img_create(panel, NULL);
+	lv_obj_set_hidden(probe, true);
+
+	// First pass: discover widths and assign group indices per image
+	int *img_widths = calloc(g_count, sizeof(int));
+	for (int i = 0; i < g_count; i++) {
+		lv_img_set_src(probe, _ssprintf("gallery/%s", g_strings + g_cache[i]));
+		img_widths[i] = lv_obj_get_width(probe);
+	}
+	lv_obj_del(probe);
+
+	// Build groups
+	g_num_groups = 0;
+	for (int i = 0; i < g_count; i++) {
+		int w = img_widths[i];
+		struct width_group *grp = find_width_group(w);
+		if (!grp) {
+			if (g_num_groups >= MAX_WIDTH_GROUPS) continue;
+			grp = &g_groups[g_num_groups++];
+			grp->width = w;
+			grp->count = 0;
+			grp->indices = malloc(g_count * sizeof(int));
+		}
+		grp->indices[grp->count++] = i;
+	}
+	free(img_widths);
+
+	printf("%s[INFO]%s Built %d width groups:", GREEN, NORMAL_COLOR, g_num_groups);
+	for (int i = 0; i < g_num_groups; i++)
+		printf(" %dpx(%d)", g_groups[i].width, g_groups[i].count);
+	printf("\n");
+}
+
+
 
 static size_t round_up(size_t v) {
 	if (v == 0)
@@ -400,6 +602,7 @@ static void panel_init(char *prog_name) {
 		CFG_SIMPLE_STR("openweather_apikey", &openweather_apikey),
 		CFG_SIMPLE_STR("openweather_label", &openweather_label),
 		CFG_FLOAT_LIST("openweather_coord", "{0, 0}", CFGF_NONE),
+		CFG_SIMPLE_INT("scroll_step", &scroll_step),
 		CFG_END()
 	};
 	cfg_t *cfg = cfg_init(opts, 0);
@@ -415,7 +618,7 @@ static void panel_init(char *prog_name) {
 	lv_obj_set_pos(gallery_panel, 0, 0);
 	lv_obj_set_size(gallery_panel, lv_obj_get_width(scr), lv_obj_get_height(scr) - 150);
 	lv_obj_set_auto_realign(gallery_panel, true); /*Auto realign when the size changes*/
-	lv_cont_set_layout(gallery_panel, LV_LAYOUT_ROW_TOP);
+	lv_cont_set_layout(gallery_panel, LV_LAYOUT_OFF);
 
 	lv_style_init(&style_gallery);
 	lv_style_set_border_width(&style_gallery, LV_STATE_DEFAULT, 0);
@@ -432,12 +635,10 @@ static void panel_init(char *prog_name) {
 			GREEN, NORMAL_COLOR,
 			lv_obj_get_width(gallery_panel), lv_obj_get_height(gallery_panel));
 
-	for (int i = 0; i < 10; i++) {
-		lv_obj_t *img = lv_img_create(gallery_panel, NULL);
-		lv_obj_set_click(img, false);
-	}
-
-	gallery_fill(gallery_panel);
+	gallery_cache_load();
+	gallery_build_width_groups(gallery_panel);
+	gallery_build_strip(gallery_panel);
+	gallery_start_scroll();
 	weather_timer_cb(NULL);
 
 	// Time/date controls
@@ -454,6 +655,50 @@ static void panel_init(char *prog_name) {
 	lv_obj_set_pos(version_label, 4, 3);
 	lv_obj_add_style(version_label, LV_LABEL_PART_MAIN, &style_version);
 	lv_label_set_text(version_label, "v" PANEL_VERSION "\n" PANEL_BUILD_DATE "\n" PANEL_BUILD_HASH);
+
+	fps_label = lv_label_create(controls_panel, NULL);
+	lv_obj_set_pos(fps_label, 4, 30);
+	lv_obj_add_style(fps_label, LV_LABEL_PART_MAIN, &style_version);
+	lv_label_set_text(fps_label, "-- fps  -- px/s");
+
+	// Performance plotter
+	plot_chart = lv_chart_create(controls_panel, NULL);
+	lv_obj_set_pos(plot_chart, 4, 42);
+	lv_obj_set_size(plot_chart, 190, 75);
+	lv_chart_set_type(plot_chart, LV_CHART_TYPE_LINE);
+	lv_chart_set_point_count(plot_chart, PLOT_POINTS);
+	lv_chart_set_range(plot_chart, 0, 80);
+	lv_chart_set_div_line_count(plot_chart, 3, 0);
+	lv_chart_set_update_mode(plot_chart, LV_CHART_UPDATE_MODE_SHIFT);
+
+	static lv_style_t style_chart_bg, style_chart_series_bg, style_chart_series;
+	lv_style_init(&style_chart_bg);
+	lv_style_set_bg_opa(&style_chart_bg, LV_STATE_DEFAULT, LV_OPA_30);
+	lv_style_set_bg_color(&style_chart_bg, LV_STATE_DEFAULT, LV_COLOR_BLACK);
+	lv_style_set_border_width(&style_chart_bg, LV_STATE_DEFAULT, 1);
+	lv_style_set_border_color(&style_chart_bg, LV_STATE_DEFAULT, lv_color_hex(0x404040));
+	lv_style_set_pad_top(&style_chart_bg, LV_STATE_DEFAULT, 2);
+	lv_style_set_pad_bottom(&style_chart_bg, LV_STATE_DEFAULT, 2);
+	lv_style_set_pad_left(&style_chart_bg, LV_STATE_DEFAULT, 2);
+	lv_style_set_pad_right(&style_chart_bg, LV_STATE_DEFAULT, 2);
+	lv_obj_add_style(plot_chart, LV_CHART_PART_BG, &style_chart_bg);
+
+	lv_style_init(&style_chart_series_bg);
+	lv_style_set_bg_opa(&style_chart_series_bg, LV_STATE_DEFAULT, LV_OPA_TRANSP);
+	lv_style_set_line_color(&style_chart_series_bg, LV_STATE_DEFAULT, lv_color_hex(0x404040));
+	lv_style_set_line_width(&style_chart_series_bg, LV_STATE_DEFAULT, 1);
+	lv_style_set_line_opa(&style_chart_series_bg, LV_STATE_DEFAULT, LV_OPA_30);
+	lv_obj_add_style(plot_chart, LV_CHART_PART_SERIES_BG, &style_chart_series_bg);
+
+	lv_style_init(&style_chart_series);
+	lv_style_set_line_width(&style_chart_series, LV_STATE_DEFAULT, 2);
+	lv_style_set_size(&style_chart_series, LV_STATE_DEFAULT, 0);
+	lv_obj_add_style(plot_chart, LV_CHART_PART_SERIES, &style_chart_series);
+
+	fps_series = lv_chart_add_series(plot_chart, lv_color_hex(0x00BBCC));
+	pxs_series = lv_chart_add_series(plot_chart, lv_color_hex(0xCC8800));
+	lv_chart_init_points(plot_chart, fps_series, 0);
+	lv_chart_init_points(plot_chart, pxs_series, 0);
 
 	const int gl_h = 118, gl_w = 71;
 	int x_off = 800 - 8 * gl_w - 30;
@@ -488,7 +733,6 @@ static void panel_init(char *prog_name) {
 
 	time_task = lv_task_create(time_timer_cb, 1000, LV_TASK_PRIO_MID, NULL);
 	net_task = lv_task_create(net_timer_cb, 3000, LV_TASK_PRIO_LOW, NULL);
-	gallery_task = lv_task_create(gallery_timer_cb, 15000, LV_TASK_PRIO_LOW, NULL);
 	weather_task = lv_task_create(weather_timer_cb, 10 * 60000, LV_TASK_PRIO_LOW, NULL);
 }
 
@@ -517,23 +761,12 @@ static void hal_init() {
 
 #else /* __linux__ */
 
-// A task to measure the elapsed time for LVGL
-static int tick_thread(void *data) {
-	(void)data;
-	while (1) {
-		SDL_Delay(5);
-		lv_tick_inc(5); /* Tell LittelvGL that 5 milliseconds were elapsed */
-	}
-	return 0;
-}
+// Tick thread no longer needed — main loop uses clock_gettime for accurate ticks
 
 static void hal_init() {
 	/* Use the 'monitor' driver which creates window on PC's monitor to simulate a display*/
 	monitor_init();
-	/* Tick init.
-	 * You have to call 'lv_tick_inc()' in periodically to inform LittelvGL about
-	 * how much time were elapsed Create an SDL thread to do this */
-	SDL_CreateThread(tick_thread, "tick", NULL);
+	/* Tick handling moved to main loop using clock_gettime */
 
 	/*Create a display buffer*/
 	lv_disp_buf_init(&disp_buf, lvbuf1, lvbuf2, LV_BUF_SIZE);
@@ -587,11 +820,19 @@ int main(int argc, char *argv[]) {
 	// Panel initialization
 	panel_init(argv[0]);
 
-	// Handle LVGL tasks (tickless mode)
+	// Handle LVGL tasks — use real elapsed time for accurate animation
+	struct timespec ts_prev, ts_now;
+	clock_gettime(CLOCK_MONOTONIC, &ts_prev);
 	while (1) {
-		lv_tick_inc(5);
+		clock_gettime(CLOCK_MONOTONIC, &ts_now);
+		uint32_t elapsed_ms = (ts_now.tv_sec - ts_prev.tv_sec) * 1000
+			+ (ts_now.tv_nsec - ts_prev.tv_nsec) / 1000000;
+		if (elapsed_ms > 0) {
+			lv_tick_inc(elapsed_ms);
+			ts_prev = ts_now;
+		}
 		lv_task_handler();
-		usleep(5000);
+		usleep(1000); // ~1ms for smooth animation
 	}
 	return 0;
 }

@@ -55,6 +55,15 @@ check_root() {
     return 0
 }
 
+# Run a command, prefixing with sudo if not root
+run_root() {
+    if ! check_root; then
+        sudo "$@"
+    else
+        "$@"
+    fi
+}
+
 # Sync to remote Pi and build there
 remote_build() {
     log_info "Remote build on ${REMOTE_HOST}"
@@ -88,16 +97,23 @@ remote_build() {
         rsync -avz "${PROJECT_DIR}/panel.ini" "${REMOTE_HOST}:${REMOTE_DIR}/panel.ini"
     fi
 
+    REMOTE_CMD="./build.sh app"
+    if [ "${REMOTE_INSTALL:-false}" = true ]; then
+        REMOTE_CMD="./build.sh --install"
+    fi
+
     log_info "Building on remote..."
-    ssh -t "${REMOTE_HOST}" "cd ${REMOTE_DIR} && ./build.sh app"
+    ssh -t "${REMOTE_HOST}" "cd ${REMOTE_DIR} && ${REMOTE_CMD}"
 
     echo ""
     log_info "Build complete!"
-    echo ""
-    echo "To run on the Pi:"
-    echo "  ssh ${REMOTE_HOST}"
-    echo "  cd ${REMOTE_DIR}"
-    echo "  sudo ./${BIN_NAME}"
+    if [ "${REMOTE_INSTALL:-false}" != true ]; then
+        echo ""
+        echo "To run on the Pi:"
+        echo "  ssh ${REMOTE_HOST}"
+        echo "  cd ${REMOTE_DIR}"
+        echo "  sudo ./${BIN_NAME}"
+    fi
 }
 
 # Install system dependencies
@@ -147,8 +163,8 @@ build_panel() {
     # Pass version info via CFLAGS
     GIT_HASH=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
     BUILD_DATE=$(date +%Y-%m-%d)
-    export EXTRA_CFLAGS="-DPANEL_VERSION=\"0.1.0\" -DPANEL_BUILD_DATE=\"${BUILD_DATE}\" -DPANEL_BUILD_HASH=\"${GIT_HASH}\""
-    log_info "Version: 0.1.0, Date: ${BUILD_DATE}, Hash: ${GIT_HASH}"
+    export EXTRA_CFLAGS="-DPANEL_BUILD_DATE=\"${BUILD_DATE}\" -DPANEL_BUILD_HASH=\"${GIT_HASH}\""
+    log_info "Date: ${BUILD_DATE}, Hash: ${GIT_HASH}"
 
     make -j$(nproc 2>/dev/null || echo 4)
 
@@ -184,80 +200,57 @@ install_app() {
         exit 1
     fi
 
-    INSTALL_DIR="/var/app/lvgl_panel"
-    SERVICE_NAME="lvgl-panel.service"
+    INSTALL_DIR="/var/app"
+    SERVICE_NAME="photoframe.service"
     SERVICE_WAS_RUNNING=false
 
-    # Check if service is currently running
-    if systemctl is-active --quiet "${SERVICE_NAME}" 2>/dev/null; then
-        SERVICE_WAS_RUNNING=true
-        log_info "Service is running, stopping it..."
-        if ! check_root; then
-            sudo systemctl stop "${SERVICE_NAME}"
-        else
-            systemctl stop "${SERVICE_NAME}"
+    # Always stop service before overwriting binary (handles active, restarting, etc.)
+    log_info "Stopping service..."
+    run_root systemctl stop "${SERVICE_NAME}" 2>/dev/null && SERVICE_WAS_RUNNING=true
+    # Wait for process to fully release the binary
+    for i in 1 2 3 4 5; do
+        if ! pgrep -x "${BIN_NAME}" >/dev/null 2>&1; then
+            break
         fi
+        log_info "Waiting for process to exit..."
+        sleep 1
+    done
+    # Force kill if still running
+    if pgrep -x "${BIN_NAME}" >/dev/null 2>&1; then
+        log_warn "Process did not exit, killing..."
+        run_root pkill -9 -x "${BIN_NAME}" 2>/dev/null
+        sleep 1
     fi
 
-    # Create installation directory
-    log_info "Creating installation directory: ${INSTALL_DIR}"
-    if ! check_root; then
-        sudo mkdir -p "${INSTALL_DIR}"
-    else
-        mkdir -p "${INSTALL_DIR}"
-    fi
+    # Ensure install directory exists
+    run_root mkdir -p "${INSTALL_DIR}"
 
     # Copy binary and runtime files
-    log_info "Copying files to ${INSTALL_DIR}..."
-    if ! check_root; then
-        sudo cp "${PROJECT_DIR}/${BIN_NAME}" "${INSTALL_DIR}/"
-        sudo chmod +x "${INSTALL_DIR}/${BIN_NAME}"
-        [ -f "${PROJECT_DIR}/panel.ini" ] && sudo cp "${PROJECT_DIR}/panel.ini" "${INSTALL_DIR}/"
-    else
-        cp "${PROJECT_DIR}/${BIN_NAME}" "${INSTALL_DIR}/"
-        chmod +x "${INSTALL_DIR}/${BIN_NAME}"
-        [ -f "${PROJECT_DIR}/panel.ini" ] && cp "${PROJECT_DIR}/panel.ini" "${INSTALL_DIR}/"
-    fi
+    log_info "Installing to ${INSTALL_DIR}..."
+    run_root cp "${PROJECT_DIR}/${BIN_NAME}" "${INSTALL_DIR}/"
+    run_root chmod +x "${INSTALL_DIR}/${BIN_NAME}"
+    [ -f "${PROJECT_DIR}/panel.ini" ] && run_root cp "${PROJECT_DIR}/panel.ini" "${INSTALL_DIR}/"
 
     # Install systemd service if service file exists
-    SERVICE_FILE="${PROJECT_DIR}/service/lvgl-panel.service"
+    SERVICE_FILE="${PROJECT_DIR}/service/photoframe.service"
     if [ -f "${SERVICE_FILE}" ]; then
         log_info "Installing systemd service..."
-        if ! check_root; then
-            sudo cp "${SERVICE_FILE}" /etc/systemd/system/
-            sudo systemctl daemon-reload
-            sudo systemctl enable "${SERVICE_NAME}"
-        else
-            cp "${SERVICE_FILE}" /etc/systemd/system/
-            systemctl daemon-reload
-            systemctl enable "${SERVICE_NAME}"
-        fi
+        run_root cp "${SERVICE_FILE}" /etc/systemd/system/
+        run_root systemctl daemon-reload
+        run_root systemctl enable "${SERVICE_NAME}"
         log_info "Service installed and enabled"
     else
         log_warn "No service file found at ${SERVICE_FILE}, skipping systemd setup"
     fi
 
-    # Restore service state if it was running
-    if [ "${SERVICE_WAS_RUNNING}" = true ]; then
-        log_info "Restarting service..."
-        if ! check_root; then
-            sudo systemctl start "${SERVICE_NAME}"
-        else
-            systemctl start "${SERVICE_NAME}"
-        fi
-        log_info "Service restarted"
-    fi
+    # Restart service
+    log_info "Restarting service..."
+    run_root systemctl restart "${SERVICE_NAME}"
+    log_info "Service restarted"
 
     log_info "Installation complete!"
     echo ""
     echo "Installed to: ${INSTALL_DIR}/${BIN_NAME}"
-    echo ""
-    if [ "${SERVICE_WAS_RUNNING}" = true ]; then
-        echo "Service was restarted automatically."
-        echo ""
-    fi
-    echo "To run manually:"
-    echo "  sudo ${INSTALL_DIR}/${BIN_NAME}"
     echo ""
 }
 
@@ -305,12 +298,12 @@ case "${1:-}" in
         ;;
     --install)
         if [ "${OS}" != "Linux" ]; then
-            log_error "--install can only be run on Linux/Raspberry Pi"
-            exit 1
+            REMOTE_INSTALL=true remote_build
+        else
+            build_panel
+            echo ""
+            install_app
         fi
-        build_panel
-        echo ""
-        install_app
         ;;
     clean)
         clean
