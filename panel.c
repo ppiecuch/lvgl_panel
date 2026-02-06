@@ -673,8 +673,8 @@ static void panel_init(char *prog_name) {
 
 	static lv_style_t style_chart_bg, style_chart_series_bg, style_chart_series;
 	lv_style_init(&style_chart_bg);
-	lv_style_set_bg_opa(&style_chart_bg, LV_STATE_DEFAULT, LV_OPA_30);
-	lv_style_set_bg_color(&style_chart_bg, LV_STATE_DEFAULT, LV_COLOR_BLACK);
+	lv_style_set_bg_opa(&style_chart_bg, LV_STATE_DEFAULT, LV_OPA_COVER);
+	lv_style_set_bg_color(&style_chart_bg, LV_STATE_DEFAULT, lv_color_hex(0xC0C0C0));
 	lv_style_set_border_width(&style_chart_bg, LV_STATE_DEFAULT, 1);
 	lv_style_set_border_color(&style_chart_bg, LV_STATE_DEFAULT, lv_color_hex(0x404040));
 	lv_style_set_pad_top(&style_chart_bg, LV_STATE_DEFAULT, 2);
