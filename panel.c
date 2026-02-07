@@ -61,6 +61,7 @@ static lv_obj_t *clock_label[8];
 static lv_obj_t *date_label, *weather_label;
 
 static lv_obj_t *led1;
+static lv_style_t style_led_green, style_led_red;
 static lv_obj_t *version_label, *fps_label;
 static lv_obj_t *plot_chart;
 static lv_chart_series_t *fps_series, *pxs_series;
@@ -141,10 +142,19 @@ static int get_current_network_speed_cb() {
 
 static void net_timer_cb(lv_task_t *timer) {
 	int net_speed = get_current_network_speed_cb();
-	if (net_speed > 0) {
+	if (net_speed < 0) {
+		// Network unavailable
+		lv_obj_add_style(led1, LV_LED_PART_MAIN, &style_led_red);
 		lv_led_on(led1);
-	} else
+	} else if (net_speed > 0) {
+		// Active traffic
+		lv_obj_add_style(led1, LV_LED_PART_MAIN, &style_led_green);
+		lv_led_on(led1);
+	} else {
+		// Network present but idle
+		lv_obj_add_style(led1, LV_LED_PART_MAIN, &style_led_green);
 		lv_led_off(led1);
+	}
 }
 
 // Gallery cache and width-group index
@@ -263,7 +273,7 @@ static void gallery_scroll_tick(lv_task_t *task) {
 		int measured_pxs = px_moved_accum;
 		if (fps_label)
 			lv_label_set_text(fps_label,
-				_ssprintf("%d fps  %d px/s", measured_fps, measured_pxs));
+				_ssprintf("#00BBCC -# %d fps  #CC8800 -# %d px/s", measured_fps, measured_pxs));
 		if (plot_chart) {
 			lv_chart_set_next(plot_chart, fps_series, measured_fps);
 			lv_chart_set_next(plot_chart, pxs_series, measured_pxs);
@@ -659,7 +669,8 @@ static void panel_init(char *prog_name) {
 	fps_label = lv_label_create(controls_panel, NULL);
 	lv_obj_set_pos(fps_label, 4, 30);
 	lv_obj_add_style(fps_label, LV_LABEL_PART_MAIN, &style_version);
-	lv_label_set_text(fps_label, "-- fps  -- px/s");
+	lv_label_set_recolor(fps_label, true);
+	lv_label_set_text(fps_label, "#00BBCC -# -- fps  #CC8800 -# -- px/s");
 
 	// Performance plotter
 	plot_chart = lv_chart_create(controls_panel, NULL);
@@ -674,9 +685,9 @@ static void panel_init(char *prog_name) {
 	static lv_style_t style_chart_bg, style_chart_series_bg, style_chart_series;
 	lv_style_init(&style_chart_bg);
 	lv_style_set_bg_opa(&style_chart_bg, LV_STATE_DEFAULT, LV_OPA_COVER);
-	lv_style_set_bg_color(&style_chart_bg, LV_STATE_DEFAULT, lv_color_hex(0xC0C0C0));
+	lv_style_set_bg_color(&style_chart_bg, LV_STATE_DEFAULT, lv_color_hex(0xF0F0F0));
 	lv_style_set_border_width(&style_chart_bg, LV_STATE_DEFAULT, 1);
-	lv_style_set_border_color(&style_chart_bg, LV_STATE_DEFAULT, lv_color_hex(0x404040));
+	lv_style_set_border_color(&style_chart_bg, LV_STATE_DEFAULT, lv_color_hex(0xC0C0C0));
 	lv_style_set_pad_top(&style_chart_bg, LV_STATE_DEFAULT, 2);
 	lv_style_set_pad_bottom(&style_chart_bg, LV_STATE_DEFAULT, 2);
 	lv_style_set_pad_left(&style_chart_bg, LV_STATE_DEFAULT, 2);
@@ -724,9 +735,20 @@ static void panel_init(char *prog_name) {
 	lv_obj_add_style(weather_label, LV_LABEL_PART_MAIN, &style_large);
 	lv_label_set_long_mode(weather_label, LV_LABEL_LONG_SROLL);
 
+	lv_style_init(&style_led_green);
+	lv_style_set_bg_color(&style_led_green, LV_STATE_DEFAULT, lv_color_hex(0x00CC00));
+	lv_style_set_border_color(&style_led_green, LV_STATE_DEFAULT, lv_color_hex(0x009900));
+	lv_style_set_shadow_color(&style_led_green, LV_STATE_DEFAULT, lv_color_hex(0x00CC00));
+
+	lv_style_init(&style_led_red);
+	lv_style_set_bg_color(&style_led_red, LV_STATE_DEFAULT, lv_color_hex(0xCC0000));
+	lv_style_set_border_color(&style_led_red, LV_STATE_DEFAULT, lv_color_hex(0x990000));
+	lv_style_set_shadow_color(&style_led_red, LV_STATE_DEFAULT, lv_color_hex(0xCC0000));
+
 	led1 = lv_led_create(controls_panel, NULL);
 	lv_obj_set_pos(led1, 785, 1);
 	lv_obj_set_size(led1, 14, 14);
+	lv_obj_add_style(led1, LV_LED_PART_MAIN, &style_led_green);
 	lv_led_off(led1);
 
 	// Start processing ..
