@@ -543,11 +543,23 @@ static void *fetch_weather_api(void *thread_data) {
 									"C",
 									temp->valueint);
 						cJSON *feels = cJSON_GetObjectItemCaseSensitive(current, "feels_like");
-						if (feels && cJSON_IsNumber(feels) && ws_off < (int)sizeof(weatherString))
-							ws_off += snprintf(weatherString + ws_off, sizeof(weatherString) - ws_off,
-									" / Feels %d\x7f"
-									"C",
-									feels->valueint);
+						if (feels && cJSON_IsNumber(feels) && ws_off < (int)sizeof(weatherString)) {
+							if (feels->valueint < 0)
+								ws_off += snprintf(weatherString + ws_off, sizeof(weatherString) - ws_off,
+										" / #FF0000 Feels %d\x7f"
+										"C#",
+										feels->valueint);
+							else if (feels->valueint > 30)
+								ws_off += snprintf(weatherString + ws_off, sizeof(weatherString) - ws_off,
+										" / #FF6600 Feels %d\x7f"
+										"C#",
+										feels->valueint);
+							else
+								ws_off += snprintf(weatherString + ws_off, sizeof(weatherString) - ws_off,
+										" / Feels %d\x7f"
+										"C",
+										feels->valueint);
+						}
 						cJSON *clouds = cJSON_GetObjectItemCaseSensitive(current, "clouds");
 						if (clouds && cJSON_IsNumber(clouds) && ws_off < (int)sizeof(weatherString))
 							ws_off += snprintf(weatherString + ws_off, sizeof(weatherString) - ws_off,
@@ -732,6 +744,7 @@ static void panel_init(char *prog_name) {
 	weather_label = lv_label_create(controls_panel, NULL);
 	lv_obj_set_y(weather_label, gl_h + 4);
 	lv_label_set_text(weather_label, "");
+	lv_label_set_recolor(weather_label, true);
 	lv_obj_add_style(weather_label, LV_LABEL_PART_MAIN, &style_large);
 	lv_label_set_long_mode(weather_label, LV_LABEL_LONG_SROLL);
 
