@@ -63,12 +63,15 @@ static lv_obj_t *date_label, *weather_label;
 static lv_obj_t *led1;
 static lv_style_t style_led_green, style_led_red;
 static lv_obj_t *version_label, *fps_label;
-static lv_obj_t *plot_chart;
+static lv_obj_t *plot_chart, *temp_chart;
 static lv_chart_series_t *fps_series, *pxs_series;
+static lv_chart_series_t *temp_series, *feel_series;
 #define PLOT_POINTS 60
 static lv_obj_t *controls_panel, *gallery_panel;
 
 static char weatherString[64] = { 0 };
+static int weatherTemp = LV_CHART_POINT_DEF;
+static int weatherFeel = LV_CHART_POINT_DEF;
 
 // Utilities functions
 
@@ -100,6 +103,12 @@ static void time_timer_cb(lv_task_t *timer) {
 	lv_obj_set_x(weather_label, lv_obj_get_width(date_label));
 	lv_obj_set_width(weather_label, lv_obj_get_width(controls_panel) - lv_obj_get_width(date_label));
 	lv_label_set_text(weather_label, weatherString);
+
+	if (temp_chart && weatherTemp != LV_CHART_POINT_DEF) {
+		temp_series->points[0] = weatherTemp;
+		feel_series->points[0] = weatherFeel;
+		lv_chart_refresh(temp_chart);
+	}
 }
 
 static int get_current_network_speed_cb() {
@@ -537,13 +546,16 @@ static void *fetch_weather_api(void *thread_data) {
 					cJSON *current = cJSON_GetObjectItemCaseSensitive(json, "current");
 					if (current) {
 						cJSON *temp = cJSON_GetObjectItemCaseSensitive(current, "temp");
-						if (temp && cJSON_IsNumber(temp))
+						if (temp && cJSON_IsNumber(temp)) {
+							weatherTemp = temp->valueint;
 							ws_off += snprintf(weatherString + ws_off, sizeof(weatherString) - ws_off,
 									"Temp. %d\x7f"
 									"C",
 									temp->valueint);
+						}
 						cJSON *feels = cJSON_GetObjectItemCaseSensitive(current, "feels_like");
 						if (feels && cJSON_IsNumber(feels) && ws_off < (int)sizeof(weatherString)) {
+							weatherFeel = feels->valueint;
 							if (feels->valueint < 0)
 								ws_off += snprintf(weatherString + ws_off, sizeof(weatherString) - ws_off,
 										" / #FF0000 Feels %d\x7f"
@@ -687,7 +699,7 @@ static void panel_init(char *prog_name) {
 	// Performance plotter
 	plot_chart = lv_chart_create(controls_panel, NULL);
 	lv_obj_set_pos(plot_chart, 4, 42);
-	lv_obj_set_size(plot_chart, 190, 75);
+	lv_obj_set_size(plot_chart, 134, 75);
 	lv_chart_set_type(plot_chart, LV_CHART_TYPE_LINE);
 	lv_chart_set_point_count(plot_chart, PLOT_POINTS);
 	lv_chart_set_range(plot_chart, 0, 80);
@@ -697,7 +709,7 @@ static void panel_init(char *prog_name) {
 	static lv_style_t style_chart_bg, style_chart_series_bg, style_chart_series;
 	lv_style_init(&style_chart_bg);
 	lv_style_set_bg_opa(&style_chart_bg, LV_STATE_DEFAULT, LV_OPA_COVER);
-	lv_style_set_bg_color(&style_chart_bg, LV_STATE_DEFAULT, lv_color_hex(0xF0F0F0));
+	lv_style_set_bg_color(&style_chart_bg, LV_STATE_DEFAULT, lv_color_hex(0xFFFFFF));
 	lv_style_set_border_width(&style_chart_bg, LV_STATE_DEFAULT, 1);
 	lv_style_set_border_color(&style_chart_bg, LV_STATE_DEFAULT, lv_color_hex(0xC0C0C0));
 	lv_style_set_pad_top(&style_chart_bg, LV_STATE_DEFAULT, 2);
@@ -722,6 +734,43 @@ static void panel_init(char *prog_name) {
 	pxs_series = lv_chart_add_series(plot_chart, lv_color_hex(0xCC8800));
 	lv_chart_init_points(plot_chart, fps_series, 0);
 	lv_chart_init_points(plot_chart, pxs_series, 0);
+
+	// Temperature histogram
+	temp_chart = lv_chart_create(controls_panel, NULL);
+	lv_obj_set_pos(temp_chart, 142, 42);
+	lv_obj_set_size(temp_chart, 56, 75);
+	lv_chart_set_type(temp_chart, LV_CHART_TYPE_COLUMN);
+	lv_chart_set_point_count(temp_chart, 1);
+	lv_chart_set_range(temp_chart, -20, 50);
+	lv_chart_set_div_line_count(temp_chart, 3, 0);
+
+	static lv_style_t style_temp_bg, style_temp_series_bg, style_temp_series;
+	lv_style_init(&style_temp_bg);
+	lv_style_set_bg_opa(&style_temp_bg, LV_STATE_DEFAULT, LV_OPA_COVER);
+	lv_style_set_bg_color(&style_temp_bg, LV_STATE_DEFAULT, lv_color_hex(0xFFFFFF));
+	lv_style_set_border_width(&style_temp_bg, LV_STATE_DEFAULT, 1);
+	lv_style_set_border_color(&style_temp_bg, LV_STATE_DEFAULT, lv_color_hex(0xC0C0C0));
+	lv_style_set_pad_top(&style_temp_bg, LV_STATE_DEFAULT, 2);
+	lv_style_set_pad_bottom(&style_temp_bg, LV_STATE_DEFAULT, 2);
+	lv_style_set_pad_left(&style_temp_bg, LV_STATE_DEFAULT, 4);
+	lv_style_set_pad_right(&style_temp_bg, LV_STATE_DEFAULT, 4);
+	lv_obj_add_style(temp_chart, LV_CHART_PART_BG, &style_temp_bg);
+
+	lv_style_init(&style_temp_series_bg);
+	lv_style_set_bg_opa(&style_temp_series_bg, LV_STATE_DEFAULT, LV_OPA_TRANSP);
+	lv_style_set_line_color(&style_temp_series_bg, LV_STATE_DEFAULT, lv_color_hex(0x404040));
+	lv_style_set_line_width(&style_temp_series_bg, LV_STATE_DEFAULT, 1);
+	lv_style_set_line_opa(&style_temp_series_bg, LV_STATE_DEFAULT, LV_OPA_30);
+	lv_obj_add_style(temp_chart, LV_CHART_PART_SERIES_BG, &style_temp_series_bg);
+
+	lv_style_init(&style_temp_series);
+	lv_style_set_size(&style_temp_series, LV_STATE_DEFAULT, 0);
+	lv_obj_add_style(temp_chart, LV_CHART_PART_SERIES, &style_temp_series);
+
+	temp_series = lv_chart_add_series(temp_chart, lv_color_hex(0xCC4400));
+	feel_series = lv_chart_add_series(temp_chart, lv_color_hex(0x0066CC));
+	lv_chart_init_points(temp_chart, temp_series, 0);
+	lv_chart_init_points(temp_chart, feel_series, 0);
 
 	const int gl_h = 118, gl_w = 71;
 	int x_off = 800 - 8 * gl_w - 30;
