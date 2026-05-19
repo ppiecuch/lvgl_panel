@@ -1,7 +1,7 @@
 #ifndef PANEL_VERSION_H
 #define PANEL_VERSION_H
 #ifndef PANEL_VERSION
-#define PANEL_VERSION "0.4.7"
+#define PANEL_VERSION "0.4.8"
 #endif
 #ifndef PANEL_BUILD_DATE
 #define PANEL_BUILD_DATE __DATE__

@@ -50,8 +50,8 @@ static lv_color_t lvbuf1[LV_BUF_SIZE];
 static lv_color_t lvbuf2[LV_BUF_SIZE];
 
 // Display info and controls
-static const char *DAY[] = { "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday" };
-static const char *MONTH[] = { "January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December" };
+static const char *DAY[] = { "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat" };
+static const char *MONTH[] = { "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
 
 static lv_style_t style_large, style_clock, style_gallery;
 static const lv_task_t *time_task, *net_task, *weather_task;
@@ -67,9 +67,19 @@ static lv_obj_t *plot_chart, *temp_chart;
 static lv_chart_series_t *fps_series, *pxs_series;
 static lv_chart_series_t *temp_series, *feel_series;
 #define PLOT_POINTS 60
+#define TEMP_POINTS 28 // 2 samples/day × 14 days
+
+struct _temp_accum {
+	double temp_sum, feel_sum;
+	int count;
+	int last_period; // 0=day(6-18), 1=night(18-6), -1=unset
+};
+static lv_coord_t temp_history[TEMP_POINTS];
+static lv_coord_t feel_history[TEMP_POINTS];
+static struct _temp_accum temp_accum = { 0, 0, 0, -1 };
 static lv_obj_t *controls_panel, *gallery_panel;
 
-static char weatherString[64] = { 0 };
+static char weatherString[96] = { 0 };
 static int weatherTemp = LV_CHART_POINT_DEF;
 static int weatherFeel = LV_CHART_POINT_DEF;
 
@@ -80,6 +90,96 @@ static int weatherFeel = LV_CHART_POINT_DEF;
     char *_ss_ret = (char*)alloca(_ss_size+1);          \
     snprintf(_ss_ret, _ss_size+1, ##__VA_ARGS__);       \
     _ss_ret; })
+
+static const char *TEMP_HISTORY_FILE = "temp_history.dat";
+
+struct _temp_file_header {
+	uint32_t magic;
+	int last_period;
+	double temp_sum, feel_sum;
+	int accum_count;
+	lv_coord_t temp[TEMP_POINTS];
+	lv_coord_t feel[TEMP_POINTS];
+};
+
+static void temp_history_load(void) {
+	for (int i = 0; i < TEMP_POINTS; i++) {
+		temp_history[i] = LV_CHART_POINT_DEF;
+		feel_history[i] = LV_CHART_POINT_DEF;
+	}
+	FILE *f = fopen(TEMP_HISTORY_FILE, "rb");
+	if (!f) {
+		printf("%s[INFO]%s No temperature history file found, starting fresh\n", GREEN, NORMAL_COLOR);
+		return;
+	}
+	struct _temp_file_header hdr;
+	if (fread(&hdr, sizeof(hdr), 1, f) == 1 && hdr.magic == 0x544D5048) {
+		memcpy(temp_history, hdr.temp, sizeof(temp_history));
+		memcpy(feel_history, hdr.feel, sizeof(feel_history));
+		temp_accum.last_period = hdr.last_period;
+		temp_accum.temp_sum = hdr.temp_sum;
+		temp_accum.feel_sum = hdr.feel_sum;
+		temp_accum.count = hdr.accum_count;
+		int valid = 0;
+		for (int i = 0; i < TEMP_POINTS; i++)
+			if (temp_history[i] != LV_CHART_POINT_DEF) valid++;
+		printf("%s[INFO]%s Loaded %d/%d temperature samples (accum: %d readings, period: %s)\n",
+				GREEN, NORMAL_COLOR, valid, TEMP_POINTS, hdr.accum_count,
+				hdr.last_period == 0 ? "day" : hdr.last_period == 1 ? "night" : "unset");
+	} else {
+		printf("%s[ERROR]%s Temperature history file corrupt, starting fresh\n", RED, NORMAL_COLOR);
+	}
+	fclose(f);
+}
+
+static void temp_history_save(void) {
+	FILE *f = fopen(TEMP_HISTORY_FILE, "wb");
+	if (!f) return;
+	struct _temp_file_header hdr;
+	hdr.magic = 0x544D5048;
+	hdr.last_period = temp_accum.last_period;
+	hdr.temp_sum = temp_accum.temp_sum;
+	hdr.feel_sum = temp_accum.feel_sum;
+	hdr.accum_count = temp_accum.count;
+	memcpy(hdr.temp, temp_history, sizeof(temp_history));
+	memcpy(hdr.feel, feel_history, sizeof(feel_history));
+	fwrite(&hdr, sizeof(hdr), 1, f);
+	fclose(f);
+}
+
+// Push averaged sample, shift history left
+static void temp_history_push(int temp_avg, int feel_avg) {
+	memmove(temp_history, temp_history + 1, (TEMP_POINTS - 1) * sizeof(lv_coord_t));
+	memmove(feel_history, feel_history + 1, (TEMP_POINTS - 1) * sizeof(lv_coord_t));
+	temp_history[TEMP_POINTS - 1] = temp_avg;
+	feel_history[TEMP_POINTS - 1] = feel_avg;
+}
+
+// Called when new weather data arrives; accumulates and pushes on day/night transition
+static void temp_history_update(int temp, int feel) {
+	time_t t = time(NULL);
+	struct tm *local = localtime(&t);
+	int period = (local->tm_hour >= 6 && local->tm_hour < 18) ? 0 : 1;
+
+	if (temp_accum.last_period == -1) {
+		// First reading after start — just begin accumulating
+		temp_accum.last_period = period;
+	} else if (period != temp_accum.last_period && temp_accum.count > 0) {
+		// Period changed — push the accumulated average
+		int avg_temp = (int)(temp_accum.temp_sum / temp_accum.count);
+		int avg_feel = (int)(temp_accum.feel_sum / temp_accum.count);
+		temp_history_push(avg_temp, avg_feel);
+		temp_accum.temp_sum = 0;
+		temp_accum.feel_sum = 0;
+		temp_accum.count = 0;
+		temp_accum.last_period = period;
+		temp_history_save();
+	}
+
+	temp_accum.temp_sum += temp;
+	temp_accum.feel_sum += feel;
+	temp_accum.count++;
+}
 
 static void time_timer_cb(lv_task_t *timer) {
 	char timeString[16] = { 0 };
@@ -104,11 +204,8 @@ static void time_timer_cb(lv_task_t *timer) {
 	lv_obj_set_width(weather_label, lv_obj_get_width(controls_panel) - lv_obj_get_width(date_label));
 	lv_label_set_text(weather_label, weatherString);
 
-	if (temp_chart && weatherTemp != LV_CHART_POINT_DEF) {
-		temp_series->points[0] = weatherTemp;
-		feel_series->points[0] = weatherFeel;
+	if (temp_chart)
 		lv_chart_refresh(temp_chart);
-	}
 }
 
 static int get_current_network_speed_cb() {
@@ -576,6 +673,12 @@ static void *fetch_weather_api(void *thread_data) {
 						if (clouds && cJSON_IsNumber(clouds) && ws_off < (int)sizeof(weatherString))
 							ws_off += snprintf(weatherString + ws_off, sizeof(weatherString) - ws_off,
 									" / Clouds %d%%", clouds->valueint);
+						cJSON *pressure = cJSON_GetObjectItemCaseSensitive(current, "pressure");
+						if (pressure && cJSON_IsNumber(pressure) && ws_off < (int)sizeof(weatherString))
+							ws_off += snprintf(weatherString + ws_off, sizeof(weatherString) - ws_off,
+									" / %dhPa", pressure->valueint);
+						if (weatherTemp != LV_CHART_POINT_DEF && weatherFeel != LV_CHART_POINT_DEF)
+							temp_history_update(weatherTemp, weatherFeel);
 					} else
 						printf("%s[ERROR]%s Unknown JSON data: %s\n", RED, NORMAL_COLOR, chunk->buf);
 				}
@@ -699,7 +802,7 @@ static void panel_init(char *prog_name) {
 	// Performance plotter
 	plot_chart = lv_chart_create(controls_panel, NULL);
 	lv_obj_set_pos(plot_chart, 4, 42);
-	lv_obj_set_size(plot_chart, 134, 75);
+	lv_obj_set_size(plot_chart, 190, 48);
 	lv_chart_set_type(plot_chart, LV_CHART_TYPE_LINE);
 	lv_chart_set_point_count(plot_chart, PLOT_POINTS);
 	lv_chart_set_range(plot_chart, 0, 80);
@@ -735,14 +838,16 @@ static void panel_init(char *prog_name) {
 	lv_chart_init_points(plot_chart, fps_series, 0);
 	lv_chart_init_points(plot_chart, pxs_series, 0);
 
-	// Temperature histogram
+	// Temperature histogram (14 days, 2 samples/day: day avg + night avg)
+	temp_history_load();
+
 	temp_chart = lv_chart_create(controls_panel, NULL);
-	lv_obj_set_pos(temp_chart, 142, 42);
-	lv_obj_set_size(temp_chart, 56, 75);
+	lv_obj_set_pos(temp_chart, 4, 92);
+	lv_obj_set_size(temp_chart, 190, 26);
 	lv_chart_set_type(temp_chart, LV_CHART_TYPE_COLUMN);
-	lv_chart_set_point_count(temp_chart, 1);
+	lv_chart_set_point_count(temp_chart, TEMP_POINTS);
 	lv_chart_set_range(temp_chart, -20, 50);
-	lv_chart_set_div_line_count(temp_chart, 3, 0);
+	lv_chart_set_div_line_count(temp_chart, 2, 0);
 
 	static lv_style_t style_temp_bg, style_temp_series_bg, style_temp_series;
 	lv_style_init(&style_temp_bg);
@@ -750,17 +855,17 @@ static void panel_init(char *prog_name) {
 	lv_style_set_bg_color(&style_temp_bg, LV_STATE_DEFAULT, lv_color_hex(0xFFFFFF));
 	lv_style_set_border_width(&style_temp_bg, LV_STATE_DEFAULT, 1);
 	lv_style_set_border_color(&style_temp_bg, LV_STATE_DEFAULT, lv_color_hex(0xC0C0C0));
-	lv_style_set_pad_top(&style_temp_bg, LV_STATE_DEFAULT, 2);
-	lv_style_set_pad_bottom(&style_temp_bg, LV_STATE_DEFAULT, 2);
-	lv_style_set_pad_left(&style_temp_bg, LV_STATE_DEFAULT, 4);
-	lv_style_set_pad_right(&style_temp_bg, LV_STATE_DEFAULT, 4);
+	lv_style_set_pad_top(&style_temp_bg, LV_STATE_DEFAULT, 1);
+	lv_style_set_pad_bottom(&style_temp_bg, LV_STATE_DEFAULT, 1);
+	lv_style_set_pad_left(&style_temp_bg, LV_STATE_DEFAULT, 2);
+	lv_style_set_pad_right(&style_temp_bg, LV_STATE_DEFAULT, 2);
 	lv_obj_add_style(temp_chart, LV_CHART_PART_BG, &style_temp_bg);
 
 	lv_style_init(&style_temp_series_bg);
 	lv_style_set_bg_opa(&style_temp_series_bg, LV_STATE_DEFAULT, LV_OPA_TRANSP);
 	lv_style_set_line_color(&style_temp_series_bg, LV_STATE_DEFAULT, lv_color_hex(0x404040));
 	lv_style_set_line_width(&style_temp_series_bg, LV_STATE_DEFAULT, 1);
-	lv_style_set_line_opa(&style_temp_series_bg, LV_STATE_DEFAULT, LV_OPA_30);
+	lv_style_set_line_opa(&style_temp_series_bg, LV_STATE_DEFAULT, LV_OPA_20);
 	lv_obj_add_style(temp_chart, LV_CHART_PART_SERIES_BG, &style_temp_series_bg);
 
 	lv_style_init(&style_temp_series);
@@ -769,8 +874,8 @@ static void panel_init(char *prog_name) {
 
 	temp_series = lv_chart_add_series(temp_chart, lv_color_hex(0xCC4400));
 	feel_series = lv_chart_add_series(temp_chart, lv_color_hex(0x0066CC));
-	lv_chart_init_points(temp_chart, temp_series, 0);
-	lv_chart_init_points(temp_chart, feel_series, 0);
+	lv_chart_set_ext_array(temp_chart, temp_series, temp_history, TEMP_POINTS);
+	lv_chart_set_ext_array(temp_chart, feel_series, feel_history, TEMP_POINTS);
 
 	const int gl_h = 118, gl_w = 71;
 	int x_off = 800 - 8 * gl_w - 30;
